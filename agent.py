@@ -88,7 +88,7 @@ HOW KALSHI TEMPERATURE CONTRACTS WORK:
 - Each contract is a yes/no question that costs 1-99 cents
 - If YES wins, the contract pays $1.00. If NO wins, it pays $0
 - Your PROFIT = $1.00 minus what you paid
-- Contracts above 85c or below 15c are rejected by the system.
+- THE SWEET SPOT IS 20-70 CENTS. Contracts above 85c or below 15c are rejected.
 
 SETTLEMENT RULES (from official Kalshi contract terms -- KNOW THESE):
 - Settlement source: NWS Daily Climate Report (OBSERVED max/min, not forecast)
@@ -103,27 +103,6 @@ WHY THIS MATTERS FOR YOUR BETS:
 - If forecast says high=38F, a ">38" contract needs 39+ to win (maybe 40% chance)
 - But a "38-39" range contract wins if high is 38 OR 39 (maybe 65% chance)
 - Always check whether the threshold is strict > or inclusive >= before estimating probability
-
-MARKET MICROSTRUCTURE -- READ THIS CAREFULLY:
-Academic research on 72 million Kalshi trades reveals structural patterns you MUST exploit:
-
-1. MAKER vs TAKER: In weather markets, takers (who cross the spread) lose -1.29% on
-   average. Makers (who post limit orders and wait) gain +1.29%. That is a 2.57
-   percentage point gap. YOU MUST BE A MAKER. Post limit orders at your target price
-   and let others come to you. Do NOT cross the spread unless you have very high
-   confidence (>70% estimated probability with >15c edge).
-
-2. YES BIAS (the "Optimism Tax"): Across all Kalshi markets, YES buyers lose -1.02%
-   while NO buyers gain +0.83%. People systematically overpay for YES. When your
-   analysis is ambiguous or the edge is small, PREFER NO positions.
-
-3. LONGSHOT BIAS: Contracts priced under 20c YES systematically underperform their
-   implied odds. At 5c YES, the actual win rate is only 4.18% (not 5%). At 10c YES,
-   actual is ~8.5% (not 10%). Never buy YES under 20c. When you see cheap YES
-   contracts, that is a signal to BUY NO (sell YES) if you have edge.
-
-4. MAKER + NO = BEST COMBO: Makers buying NO earn +1.25 percentage points excess
-   return vs +0.77 for makers buying YES. When posting limit orders, prefer NO side.
 
 YOUR WORKFLOW:
 
@@ -141,21 +120,19 @@ YOUR WORKFLOW:
 3. FIND VALUE CONTRACTS
    The BEST bets are contracts where:
    - The NWS forecast is NEAR the contract threshold (within 3-5 degrees)
+   - The contract price is in the 20-70 cent range
    - You have an information edge (forecast says one thing, market prices another)
-   - You can be on the MAKER side (post a limit order, not cross the spread)
-
-   GOOD bets (in order of preference):
-   a) NO side as maker: Post a NO limit order on a contract where the market
-      overestimates the YES probability. This captures both maker edge AND NO edge.
-   b) YES side as maker: Post a YES limit order on a range contract where the
-      forecast lands IN the range and the market underprices it.
-   c) Either side as taker: ONLY if you have high confidence (>70%) AND the edge
-      is large (>15c). Crossing the spread costs you the maker-taker gap.
 
    BAD bets to AVOID:
-   - YES at any price under 20c (longshot bias -- these almost never hit at rate implied)
-   - Any taker order with less than 15c edge (the spread eats your profit)
    - Contracts far from the forecast (e.g. "high >45" when forecast is 38)
+   - Any contract where you'd pay 85c+ to win 15c or less
+
+   GOOD bets to LOOK FOR:
+   - Range contracts (B38.5 = "will high be 38-39?") where the forecast lands
+     IN the range. These are often priced 30-60c with good edge.
+   - Threshold contracts near the forecast where the market is mispriced.
+     Remember: ">38" is STRICT, so if forecast is 38F, ">38" only wins if it
+     goes ABOVE 38. Factor this into your probability estimate.
 
 4. ORDERBOOK ANALYSIS
    For each promising contract, call get_orderbook.
@@ -164,48 +141,40 @@ YOUR WORKFLOW:
    - "no": [[price, qty], ...] = people wanting to BUY NO (NO bids)
    The ASK on one side = 100 minus the BID on the other side.
 
-   KEY: Look at the spread (gap between best bid and best ask). A wide spread means
-   more profit opportunity as a maker. Post your limit order INSIDE the spread --
-   better than the current best bid but not crossing to the ask.
-
 5. EXPECTED VALUE CHECK (MANDATORY before every bet)
    For EACH potential bet, calculate:
    a) Your estimated probability of winning (p)
    b) Your cost per contract (c)
    c) Your profit if you win = (100 - c) cents
    d) Expected value = p * (100 - c) - (1 - p) * c
-   e) Apply the maker bonus: if posting a limit order (not crossing spread),
-      add +1.3c to your EV estimate (the structural maker edge in weather)
-   f) Apply the NO bonus: if betting NO, add +0.8c to your EV estimate
-   g) ONLY bet if adjusted expected value > +5 cents per contract
-   h) SKIP if cost > 85c or cost < 15c (these are automatically rejected anyway)
+   e) ONLY bet if expected value > +10 cents per contract
+   f) SKIP if cost > 85c or cost < 15c (these are automatically rejected anyway)
 
-6. ORDER EXECUTION -- MAKER-FIRST STRATEGY
+   Example of a GOOD bet:
+   - "Will high be 36-37?" NWS says 36F. Probability ~65%. Price: 40c.
+   - EV = 0.65 * 60 - 0.35 * 40 = 39 - 14 = +25c per contract. BET!
 
-   PREFERRED: POST LIMIT ORDERS (be the maker)
-   - Look at the spread between best bid and best ask
-   - Post your order INSIDE the spread at a price that gives you edge
-   - Your order may not fill immediately -- that is OK. Resting orders on Kalshi
-     stay active until the market closes. The maker edge makes waiting worthwhile.
+   Example of a BAD bet:
+   - "Will high be >45?" NWS says 38F. Probability ~3%. NO costs 99c.
+   - EV = 0.97 * 1 - 0.03 * 99 = 0.97 - 2.97 = -2c per contract. SKIP!
 
-   TO POST A YES LIMIT ORDER:
-   - Pick a yes_price below the current ask (where you'd have to pay to cross)
-   - Place: side='yes', yes_price_cents = your_target_price
-   - Example: YES ask is 65 (NO bid at 35). Post at yes_price=60 to save 5c.
+6. ORDER EXECUTION
+   TO GET AN IMMEDIATE FILL, YOU MUST CROSS THE SPREAD:
 
-   TO POST A NO LIMIT ORDER:
-   - Pick a yes_price above the current YES bid (which is the NO ask inverted)
-   - Place: side='no', yes_price_cents = your_target_yes_price
-   - Example: YES bid is 30 (NO ask is 70). Post side='no', yes_price=35.
-     Your NO cost = 100 - 35 = 65c, saving 5c vs crossing at 70c.
+   TO BUY YES:
+   - Find the best NO bid price in the orderbook
+   - Your cost = 100 - no_bid_price
+   - Place: side='yes', yes_price_cents = (100 - no_bid_price)
+   - Example: NO bid at 40 -> YES costs 60. Place side='yes', yes_price_cents=60
 
-   FALLBACK: CROSS THE SPREAD (be a taker)
-   Only do this when:
-   - Your estimated probability is >70% AND edge is >15c
-   - The spread is narrow (<5c) so the taker penalty is small
+   TO BUY NO:
+   - Find the best YES bid price in the orderbook
+   - Your cost = 100 - yes_bid_price
+   - Place: side='no', yes_price_cents = yes_bid_price
+   - Example: YES bid at 30 -> NO costs 70. Place side='no', yes_price_cents=30
 
-   If the orderbook is EMPTY (no bids on either side), you MAY post a limit order
-   to provide liquidity. Price it based on your probability estimate.
+   If the orderbook is EMPTY (no bids on either side), SKIP that contract.
+   Do NOT post passive limit orders into an empty book.
 
 7. PRE-TRADE CHECK
    Call get_account_balance to confirm sufficient funds.
@@ -215,18 +184,15 @@ YOUR WORKFLOW:
    The response includes _risk_reward showing your risk vs potential profit.
 
 9. SUMMARY
-   Print: | City | Contract | Side | Maker/Taker | Your Prob | Cost | Profit if Win | EV | Status |
+   Print: | City | Contract | Your Prob | Cost | Profit if Win | EV | Filled? |
 
 RULES:
-- BE A MAKER: Post limit orders. Let takers come to you. The 2.57pp weather maker
-  edge is your biggest structural advantage.
-- PREFER NO: When the edge is ambiguous, lean NO. YES buyers pay an "optimism tax."
-- AVOID LONGSHOTS: Never buy YES under 20c. The longshot bias means they lose more
-  than the price implies.
-- Always calculate EV BEFORE placing a bet.
-- Skip if no good opportunities exist -- passing is better than a bad bet.
+- FOCUS ON VALUE: only bet contracts priced 20-70c with clear edge
+- NEVER chase extreme prices (below 15c or above 85c) -- the system will reject them
+- Always calculate EV BEFORE placing a bet
+- Skip if no good opportunities exist -- passing is better than a bad bet
 - Remember settlement uses STRICT > and < operators. Factor this into probability.
-- NWS Daily Climate Report is the official settlement source."""
+- NWS Daily Climate Report is the official settlement source"""
 
 
 def dispatch_tool(name, inp, pk, api_key_id, base_url, dry_run, mode="", target_date=""):
@@ -482,9 +448,8 @@ def main():
         f"Research weather forecasts and place bets on {target_date} temperature markets "
         f"for these cities: {', '.join(valid_cities)}. "
         f"Current time: {now.strftime('%I:%M %p CST')}. "
-        f"STRATEGY: Post limit orders inside the spread (be a maker). Prefer NO positions "
-        f"when edge is ambiguous. Never buy YES under 20c. Only cross the spread if your "
-        f"probability estimate is >70% AND edge exceeds 15c. "
+        f"IMPORTANT: When you find good bets, TAKE the existing liquidity at the ask/bid price. "
+        f"Do NOT post passive limit orders at extreme prices. "
         f"Be methodical -- check timing carefully before betting. Go."
     )
 
