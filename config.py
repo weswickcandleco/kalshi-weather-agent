@@ -92,3 +92,14 @@ MAX_AGENT_TURNS = 30
 
 # Claude model for the agentic loop
 CLAUDE_MODEL = "claude-haiku-4-5-20251001"
+
+# Market microstructure parameters (from Becker 2026, 72M Kalshi trades)
+# Source: "The Microstructure of Wealth Transfer in Prediction Markets"
+WEATHER_MAKER_EDGE_PP = 1.29     # maker excess return in weather markets (percentage points)
+WEATHER_TAKER_LOSS_PP = -1.29    # taker excess return in weather markets
+WEATHER_MAKER_TAKER_GAP_PP = 2.57  # total gap between maker and taker returns
+YES_BUYER_RETURN_PP = -1.02      # YES buyers lose on average (optimism tax)
+NO_BUYER_RETURN_PP = 0.83        # NO buyers win on average
+MAKER_NO_EDGE_PP = 1.25          # maker buying NO excess return
+MAKER_YES_EDGE_PP = 0.77         # maker buying YES excess return
+LONGSHOT_CEILING_CENTS = 20      # YES contracts below this are systematically overpriced
