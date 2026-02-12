@@ -1,0 +1,48 @@
+name: Morning Settlement
+
+on:
+  schedule:
+    # 9:00 AM CT = 15:00 UTC (CST is UTC-6)
+    - cron: '0 15 * * *'
+  workflow_dispatch: # Allow manual trigger
+
+permissions:
+  contents: write
+
+jobs:
+  settle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Create .env
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          cat > .env <<EOF
+          DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
+          EOF
+
+      - name: Run settlement checker
+        run: python settle.py
+
+      - name: Commit updated trades.db
+        run: |
+          git config user.name "kalshi-bot"
+          git config user.email "bot@kalshi-agent.local"
+          git pull --rebase origin main || true
+          git add trades.db
+          git diff --cached --quiet || git commit -m "bot: trades.db after settlement $(date -u +%Y-%m-%d)"
+          git push

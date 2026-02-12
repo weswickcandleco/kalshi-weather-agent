@@ -1,0 +1,65 @@
+name: Daily Agent Run
+
+on:
+  schedule:
+    # 8:00 PM CT = 02:00 UTC (CST is UTC-6)
+    - cron: '0 2 * * *'
+  workflow_dispatch: # Allow manual trigger
+
+permissions:
+  contents: write
+
+jobs:
+  run-agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Write secrets to files
+        env:
+          KALSHI_PROD_PEM: ${{ secrets.KALSHI_PROD_PRIVATE_KEY }}
+          KALSHI_DEMO_PEM: ${{ secrets.KALSHI_DEMO_PRIVATE_KEY }}
+        run: |
+          echo "$KALSHI_PROD_PEM" > kalshi-prod-private-key.pem
+          echo "$KALSHI_DEMO_PEM" > kalshi-private-key.pem
+          chmod 600 *.pem
+
+      - name: Create .env
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          KALSHI_PROD_API_KEY_ID: ${{ secrets.KALSHI_PROD_API_KEY_ID }}
+          KALSHI_DEMO_API_KEY_ID: ${{ secrets.KALSHI_DEMO_API_KEY_ID }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          cat > .env <<EOF
+          ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+          KALSHI_PROD_API_KEY_ID=${KALSHI_PROD_API_KEY_ID}
+          KALSHI_PROD_PRIVATE_KEY_PATH=./kalshi-prod-private-key.pem
+          KALSHI_DEMO_API_KEY_ID=${KALSHI_DEMO_API_KEY_ID}
+          KALSHI_DEMO_PRIVATE_KEY_PATH=./kalshi-private-key.pem
+          DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
+          EOF
+
+      - name: Run agent (live)
+        run: python agent.py --live
+
+      - name: Commit updated trades.db
+        run: |
+          git config user.name "kalshi-bot"
+          git config user.email "bot@kalshi-agent.local"
+          git pull --rebase origin main || true
+          git add trades.db
+          git diff --cached --quiet || git commit -m "bot: trades.db after daily run $(date -u +%Y-%m-%d)"
+          git push
