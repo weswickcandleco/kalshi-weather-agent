@@ -1,9 +1,9 @@
-name: Evening Auto-Trade (Lows)
+name: Morning Auto-Trade (Highs)
 
 on:
   schedule:
-    # 8:00 PM CT = 02:00 UTC (CST is UTC-6)
-    - cron: '0 2 * * *'
+    # 9:30 AM CT = 15:30 UTC (CST is UTC-6)
+    - cron: '30 15 * * *'
   workflow_dispatch: # Allow manual trigger
 
 permissions:
@@ -54,8 +54,8 @@ jobs:
           DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
           EOF
 
-      - name: Run auto-trader (lows only)
-        run: python auto_trade.py --live --market-type low
+      - name: Run auto-trader (highs only, today)
+        run: python auto_trade.py --live --market-type high --date $(TZ='America/Chicago' date +%Y-%m-%d)
 
       - name: Commit updated trades.db and dashboard data
         run: |
@@ -63,5 +63,5 @@ jobs:
           git config user.email "bot@kalshi-agent.local"
           git pull --rebase origin main || true
           git add trades.db dashboard/data.json
-          git diff --cached --quiet || git commit -m "bot: trades.db + dashboard after daily run $(date -u +%Y-%m-%d)"
+          git diff --cached --quiet || git commit -m "bot: trades.db + dashboard after morning run $(date -u +%Y-%m-%d)"
           git push

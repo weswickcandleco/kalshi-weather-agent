@@ -44,13 +44,17 @@ from tools.kalshi_trading import (
     tool_place_order,
     TRADING_TOOL_DEFINITIONS,
 )
-from tools.trade_log import log_trade, log_run, print_history, get_trade_history
+from tools.trade_log import log_trade, log_run, print_history, get_trade_history, get_existing_tickers, get_city_bet_count
 from tools.notify import notify_bets_placed, notify_error
 
 # Tracks cumulative dollars committed in this run (reset each run)
 _run_spend_cents = 0
 # Valid Kalshi ticker: uppercase letters, digits, hyphens, dots
 _TICKER_RE = re.compile(r"^[A-Z0-9][A-Z0-9\-\.]{2,60}$")
+# Max bets per city per day (hard limit Claude can't override)
+MAX_BETS_PER_CITY = 2
+# Tracks bets placed this run per city
+_run_city_bets = {}
 
 # Ticker parsing regex (same as settle.py)
 _CONTRACT_RE = re.compile(r"KX(HIGH|LOWT)([A-Z]+)-\d+[A-Z]+\d+-([BT])([\d\.]+)")
@@ -64,15 +68,15 @@ _CONTRACT_RE = re.compile(r"KX(HIGH|LOWT)([A-Z]+)-\d+[A-Z]+\d+-([BT])([\d\.]+)")
 
 FORECAST_ERROR_SD = {
     #           Winter  Spring  Summer  Autumn
-    "CHI":  {"winter": 4.0, "spring": 3.2, "summer": 2.2, "autumn": 3.0},
-    "NYC":  {"winter": 3.5, "spring": 2.8, "summer": 2.0, "autumn": 2.8},
-    "MIA":  {"winter": 2.0, "spring": 1.8, "summer": 1.5, "autumn": 1.8},
-    "LAX":  {"winter": 2.0, "spring": 2.2, "summer": 1.5, "autumn": 2.5},
-    "AUS":  {"winter": 3.0, "spring": 2.5, "summer": 2.0, "autumn": 2.5},
-    "DEN":  {"winter": 4.5, "spring": 3.5, "summer": 2.5, "autumn": 3.5},
-    "PHIL": {"winter": 3.5, "spring": 2.8, "summer": 2.0, "autumn": 2.8},
+    "CHI":  {"winter": 7.0, "spring": 5.5, "summer": 4.0, "autumn": 5.5},
+    "NYC":  {"winter": 6.0, "spring": 5.0, "summer": 3.5, "autumn": 5.0},
+    "MIA":  {"winter": 4.0, "spring": 3.5, "summer": 3.0, "autumn": 3.5},
+    "LAX":  {"winter": 4.5, "spring": 4.0, "summer": 3.5, "autumn": 5.0},
+    "AUS":  {"winter": 6.0, "spring": 5.0, "summer": 4.0, "autumn": 5.0},
+    "DEN":  {"winter": 8.0, "spring": 6.5, "summer": 4.5, "autumn": 6.0},
+    "PHIL": {"winter": 6.0, "spring": 5.0, "summer": 3.5, "autumn": 5.0},
 }
-_DEFAULT_SD = {"winter": 3.5, "spring": 3.0, "summer": 2.0, "autumn": 3.0}
+_DEFAULT_SD = {"winter": 6.0, "spring": 5.0, "summer": 3.5, "autumn": 5.0}
 
 
 def _get_season(date_str):
@@ -380,10 +384,46 @@ def dispatch_tool(name, inp, pk, api_key_id, base_url, dry_run, mode="", target_
         ticker = inp["ticker"]
         if not _TICKER_RE.match(ticker):
             return json.dumps({"error": f"Invalid ticker format: {ticker!r}"})
-        # Per-run spending cap
+
         side = inp["side"]
         ypc = inp["yes_price_cents"]
         count = inp["contracts"]
+
+        # --- Hard guardrail: Deduplication ---
+        existing = get_existing_tickers(target_date)
+        if ticker in {t for t, _ in existing}:
+            return json.dumps({"error": f"DEDUP BLOCKED: Already have a position on {ticker} for {target_date}. Skipping duplicate."})
+
+        # --- Hard guardrail: Contradictory bet blocking ---
+        opposite = "no" if side == "yes" else "yes"
+        if (ticker, opposite) in existing:
+            return json.dumps({"error": f"CONFLICT BLOCKED: Already hold {opposite.upper()} on {ticker}. Cannot bet {side.upper()} on same contract."})
+
+        # --- Hard guardrail: City limit ---
+        city_code = ""
+        for code in CITY_CONFIGS:
+            if code in ticker:
+                city_code = code
+                break
+        if city_code:
+            city_counts = get_city_bet_count(target_date)
+            run_city = _run_city_bets.get(city_code, 0)
+            total_city = city_counts.get(city_code, 0) + run_city
+            if total_city >= MAX_BETS_PER_CITY:
+                return json.dumps({"error": f"CITY LIMIT: {city_code} already has {total_city} bet(s) for {target_date} (max {MAX_BETS_PER_CITY}). Skip this city."})
+
+        # --- Hard guardrail: Negative-EV blocking ---
+        est_prob = inp.get("est_probability")
+        if est_prob is not None:
+            cost_c = ypc if side == "yes" else 100 - ypc
+            if side == "yes":
+                ev = est_prob * (100 - cost_c) - (1 - est_prob) * cost_c
+            else:
+                ev = (1 - est_prob) * (100 - cost_c) - est_prob * cost_c
+            if ev < 0:
+                return json.dumps({"error": f"NEGATIVE EV BLOCKED: EV is {ev:.1f}c (negative). This bet loses money on average. Skipping."})
+
+        # Per-run spending cap
         cost_this_order = (ypc if side == "yes" else 100 - ypc) * count
         if (_run_spend_cents + cost_this_order) > int(MAX_RUN_DOLLARS * 100):
             remaining = int(MAX_RUN_DOLLARS * 100) - _run_spend_cents
@@ -406,11 +446,15 @@ def dispatch_tool(name, inp, pk, api_key_id, base_url, dry_run, mode="", target_
                     actual_cost = cost_this_order
                 _run_spend_cents += actual_cost
                 print(f"  [SPEND] ${actual_cost/100:.2f} this order | ${_run_spend_cents/100:.2f} / ${MAX_RUN_DOLLARS:.2f} run total")
-                city = ""
-                for code in CITY_CONFIGS:
-                    if code in ticker:
-                        city = code
-                        break
+                # Track per-city bet count for this run
+                if city_code:
+                    _run_city_bets[city_code] = _run_city_bets.get(city_code, 0) + 1
+                city = city_code or ""
+                if not city:
+                    for code in CITY_CONFIGS:
+                        if code in ticker:
+                            city = code
+                            break
                 filled = False
                 order_id = None
                 if not dry_run and "response" in parsed:

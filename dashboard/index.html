@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kalshi Weather Agent -- Live Dashboard</title>
+<style>
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --border: #2a2d37;
+    --text: #e2e8f0; --muted: #94a3b8; --green: #4ade80; --red: #f87171;
+    --yellow: #fbbf24; --blue: #60a5fa; --purple: #a78bfa;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 20px; max-width: 1400px; margin: 0 auto; }
+  h1 { font-size: 24px; margin-bottom: 4px; }
+  h2 { font-size: 18px; margin: 28px 0 12px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+  h3 { font-size: 15px; margin: 16px 0 8px; color: var(--muted); }
+  .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 4px; }
+  .updated { color: var(--muted); font-size: 12px; margin-bottom: 20px; }
+  .updated .live { color: var(--green); font-weight: 600; }
+
+  /* Cards */
+  .cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 18px; min-width: 160px; flex: 1; }
+  .card-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .card-value { font-size: 28px; font-weight: 700; }
+  .card-detail { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .green { color: var(--green); }
+  .red { color: var(--red); }
+  .yellow { color: var(--yellow); }
+  .blue { color: var(--blue); }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 16px; }
+  th { text-align: left; padding: 8px 10px; background: var(--surface); color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid var(--border); position: sticky; top: 0; }
+  td { padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:hover { background: #1e2130; }
+  .mono { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; }
+  .right { text-align: right; }
+  .nowrap { white-space: nowrap; }
+
+  /* Badges */
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+  .badge-win { background: #16a34a33; color: var(--green); }
+  .badge-loss { background: #dc262633; color: var(--red); }
+  .badge-pending { background: #eab30833; color: var(--yellow); }
+  .badge-nofill { background: #64748b33; color: var(--muted); }
+  .badge-ensemble { background: #7c3aed22; color: var(--purple); }
+  .badge-sd { background: #1e40af22; color: var(--blue); }
+  .badge-dry { background: #64748b33; color: var(--muted); }
+
+  /* Weather grid */
+  .weather-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .weather-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+  .weather-city { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
+  .weather-temp { font-size: 24px; font-weight: 700; }
+  .weather-row { display: flex; justify-content: space-between; margin-top: 4px; font-size: 12px; color: var(--muted); }
+
+  /* Loading */
+  .loading { text-align: center; padding: 40px; color: var(--muted); }
+  .spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 8px; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 0; margin-bottom: 16px; border-bottom: 2px solid var(--border); }
+  .tab { padding: 8px 16px; cursor: pointer; color: var(--muted); font-size: 13px; font-weight: 600; border-bottom: 2px solid transparent; margin-bottom: -2px; }
+  .tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+  .tab:hover { color: var(--text); }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* Date filter */
+  .filters { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  .filter-btn { padding: 4px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); font-size: 12px; cursor: pointer; }
+  .filter-btn.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+  .filter-btn:hover { border-color: var(--blue); }
+</style>
+</head>
+<body>
+
+<h1>Kalshi Weather Agent</h1>
+<p class="subtitle">Autonomous weather prediction market bot -- live dashboard</p>
+<p class="updated" id="updated">Loading...</p>
+
+<!-- P&L Summary -->
+<div class="cards" id="pnl-cards">
+  <div class="card"><div class="card-label">Loading...</div><div class="card-value">--</div></div>
+</div>
+
+<!-- Tabs -->
+<div class="tabs">
+  <div class="tab active" data-tab="trades">All Trades</div>
+  <div class="tab" data-tab="weather">Live Weather</div>
+  <div class="tab" data-tab="runs">Run History</div>
+  <div class="tab" data-tab="calibration">Calibration</div>
+</div>
+
+<!-- Tab: All Trades -->
+<div class="tab-content active" id="tab-trades">
+  <div class="filters" id="date-filters"></div>
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>City</th>
+        <th>Ticker</th>
+        <th>Side</th>
+        <th class="right">Cost</th>
+        <th class="right">Prob</th>
+        <th>Source</th>
+        <th>Forecast</th>
+        <th>Observed</th>
+        <th>Ensemble</th>
+        <th class="right">EV</th>
+        <th>Result</th>
+        <th class="right">P&L</th>
+      </tr>
+    </thead>
+    <tbody id="trades-body"></tbody>
+  </table>
+</div>
+
+<!-- Tab: Live Weather -->
+<div class="tab-content" id="tab-weather">
+  <p class="subtitle" style="margin-bottom:12px">Live observations + forecasts from NWS + Open-Meteo ensemble (122 members)</p>
+  <div id="weather-loading" class="loading"><span class="spinner"></span> Fetching live weather data...</div>
+  <div class="weather-grid" id="weather-grid"></div>
+</div>
+
+<!-- Tab: Run History -->
+<div class="tab-content" id="tab-runs">
+  <table>
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Mode</th>
+        <th>Target Date</th>
+        <th>Cities</th>
+        <th class="right">Placed</th>
+        <th class="right">Skipped</th>
+        <th class="right">Cost</th>
+      </tr>
+    </thead>
+    <tbody id="runs-body"></tbody>
+  </table>
+</div>
+
+<!-- Tab: Calibration -->
+<div class="tab-content" id="tab-calibration">
+  <h3>Forecast vs. Observed (settled trades only)</h3>
+  <p class="subtitle" style="margin-bottom:12px">Shows how far off the NWS forecast was from actual observed temps. Helps tune the probability model.</p>
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>City</th>
+        <th>Type</th>
+        <th class="right">Forecast</th>
+        <th class="right">Observed</th>
+        <th class="right">Error</th>
+        <th>Ensemble Mean</th>
+        <th>Ensemble SD</th>
+      </tr>
+    </thead>
+    <tbody id="calibration-body"></tbody>
+  </table>
+</div>
+
+<script>
+const WORKER_URL = 'https://kalshi-weather-data.wes-432.workers.dev';
+const DATA_URL = 'data.json';
+
+let tradeData = null;
+let activeDate = 'all';
+
+// ---- Tabs ----
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+    // Lazy-load weather on first click
+    if (tab.dataset.tab === 'weather' && !weatherLoaded) loadLiveWeather();
+  });
+});
+
+let weatherLoaded = false;
+
+// ---- Fetch trade data ----
+async function loadTradeData() {
+  try {
+    const resp = await fetch(DATA_URL + '?t=' + Date.now());
+    tradeData = await resp.json();
+    renderPnL(tradeData.pnl);
+    renderDateFilters(tradeData.by_date);
+    renderTrades(tradeData.trades);
+    renderRuns(tradeData.runs);
+    renderCalibration(tradeData.trades);
+    document.getElementById('updated').innerHTML =
+      'Data exported: ' + formatTime(tradeData.exported_at) +
+      ' &mdash; <span class="live">Auto-updates after each run</span>';
+  } catch (e) {
+    document.getElementById('updated').textContent = 'Failed to load trade data: ' + e.message;
+  }
+}
+
+// ---- P&L Cards ----
+function renderPnL(pnl) {
+  const net = pnl.net_pnl_dollars || 0;
+  const netClass = net >= 0 ? 'green' : 'red';
+  const netSign = net >= 0 ? '+' : '';
+  const wr = pnl.win_rate !== null ? (pnl.win_rate * 100).toFixed(0) + '%' : 'N/A';
+  document.getElementById('pnl-cards').innerHTML = `
+    <div class="card">
+      <div class="card-label">Total Invested</div>
+      <div class="card-value">$${(pnl.total_cost_dollars || 0).toFixed(2)}</div>
+      <div class="card-detail">${pnl.filled_trades || 0} filled trades</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Net P&L</div>
+      <div class="card-value ${netClass}">${netSign}$${net.toFixed(2)}</div>
+      <div class="card-detail">Payout: $${(pnl.total_payout_dollars || 0).toFixed(2)}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Win Rate</div>
+      <div class="card-value">${wr}</div>
+      <div class="card-detail">${pnl.wins || 0}W - ${pnl.losses || 0}L - ${pnl.pending || 0} pending</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Total Trades</div>
+      <div class="card-value">${pnl.total_trades || 0}</div>
+      <div class="card-detail">${pnl.filled_trades || 0} filled, ${(pnl.total_trades || 0) - (pnl.filled_trades || 0)} unfilled</div>
+    </div>
+  `;
+}
+
+// ---- Date Filters ----
+function renderDateFilters(byDate) {
+  const dates = Object.keys(byDate).sort().reverse();
+  let html = '<div class="filter-btn active" data-date="all">All Dates</div>';
+  for (const d of dates) {
+    const info = byDate[d];
+    html += `<div class="filter-btn" data-date="${d}">${d} (${info.trade_count})</div>`;
+  }
+  const el = document.getElementById('date-filters');
+  el.innerHTML = html;
+  el.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      el.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeDate = btn.dataset.date;
+      renderTrades(tradeData.trades);
+    });
+  });
+}
+
+// ---- Trades Table ----
+function renderTrades(trades) {
+  const filtered = activeDate === 'all' ? trades : trades.filter(t => t.target_date === activeDate);
+  const sorted = [...filtered].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+
+  let html = '';
+  for (const t of sorted) {
+    const isDry = t.dry_run;
+    const cost = (t.cost_cents / 100).toFixed(2);
+
+    // Result badge
+    let resultBadge;
+    if (isDry) {
+      resultBadge = '<span class="badge badge-dry">DRY RUN</span>';
+    } else if (!t.filled) {
+      resultBadge = '<span class="badge badge-nofill">Not Filled</span>';
+    } else if (t.settlement_result === 'win') {
+      resultBadge = '<span class="badge badge-win">WIN</span>';
+    } else if (t.settlement_result === 'loss') {
+      resultBadge = '<span class="badge badge-loss">LOSS</span>';
+    } else {
+      resultBadge = '<span class="badge badge-pending">Pending</span>';
+    }
+
+    // P&L
+    let pnlStr = '--';
+    if (t.filled && !isDry) {
+      if (t.settlement_result === 'win') {
+        const profit = (t.payout_cents - t.cost_cents) / 100;
+        pnlStr = '<span class="green">+$' + profit.toFixed(2) + '</span>';
+      } else if (t.settlement_result === 'loss') {
+        pnlStr = '<span class="red">-$' + cost + '</span>';
+      } else {
+        pnlStr = '<span class="yellow">?</span>';
+      }
+    }
+
+    // Prob source badge
+    const srcBadge = t.prob_source === 'ensemble'
+      ? '<span class="badge badge-ensemble">Ensemble</span>'
+      : t.prob_source === 'sd_model'
+        ? '<span class="badge badge-sd">SD Model</span>'
+        : '<span class="badge badge-sd">--</span>';
+
+    // Forecast
+    const fHigh = t.forecast_high_f !== null ? t.forecast_high_f + 'F' : '--';
+    const fLow = t.forecast_low_f !== null ? t.forecast_low_f + 'F' : '--';
+    const forecast = 'H:' + fHigh + ' L:' + fLow;
+
+    // Observed
+    const oHigh = t.observed_high_f !== null ? Math.round(t.observed_high_f) + 'F' : '--';
+    const oLow = t.observed_low_f !== null ? Math.round(t.observed_low_f) + 'F' : '--';
+    const observed = t.observed_high_f !== null ? 'H:' + oHigh + ' L:' + oLow : '--';
+
+    // Ensemble info
+    let ensInfo = '--';
+    if (t.ensemble_member_count) {
+      const isHigh = t.ticker.includes('HIGH');
+      const mean = isHigh
+        ? (t.ensemble_mean_high !== null ? t.ensemble_mean_high + 'F' : '?')
+        : (t.ensemble_mean_low !== null ? t.ensemble_mean_low + 'F' : '?');
+      const sd = isHigh
+        ? (t.ensemble_sd_high !== null ? '\u00B1' + t.ensemble_sd_high : '')
+        : (t.ensemble_sd_low !== null ? '\u00B1' + t.ensemble_sd_low : '');
+      ensInfo = t.ensemble_member_count + 'm ' + mean + ' ' + sd;
+    }
+
+    // EV
+    const ev = t.expected_value_cents !== null ? '+' + t.expected_value_cents.toFixed(0) + 'c' : '--';
+
+    // Prob
+    const prob = t.est_probability !== null ? (t.est_probability * 100).toFixed(0) + '%' : '--';
+
+    html += '<tr>' +
+      '<td class="nowrap">' + t.target_date + '</td>' +
+      '<td><strong>' + t.city + '</strong></td>' +
+      '<td class="mono">' + t.ticker + '</td>' +
+      '<td>' + t.side.toUpperCase() + '</td>' +
+      '<td class="right nowrap">$' + cost + '<br><span style="color:var(--muted);font-size:11px">' + t.contracts + 'x @ ' + t.yes_price_cents + 'c</span></td>' +
+      '<td class="right">' + prob + '</td>' +
+      '<td>' + srcBadge + '</td>' +
+      '<td class="nowrap" style="font-size:12px">' + forecast + '</td>' +
+      '<td class="nowrap" style="font-size:12px">' + observed + '</td>' +
+      '<td style="font-size:11px;color:var(--muted)">' + ensInfo + '</td>' +
+      '<td class="right nowrap">' + ev + '</td>' +
+      '<td>' + resultBadge + '</td>' +
+      '<td class="right nowrap">' + pnlStr + '</td>' +
+    '</tr>';
+  }
+
+  document.getElementById('trades-body').innerHTML = html || '<tr><td colspan="13" style="text-align:center;color:var(--muted)">No trades found</td></tr>';
+}
+
+// ---- Run History ----
+function renderRuns(runs) {
+  let html = '';
+  for (const r of runs) {
+    html += '<tr>' +
+      '<td class="nowrap">' + formatTime(r.timestamp) + '</td>' +
+      '<td>' + r.mode + '</td>' +
+      '<td>' + r.target_date + '</td>' +
+      '<td>' + r.cities + '</td>' +
+      '<td class="right">' + r.trades_placed + '</td>' +
+      '<td class="right">' + r.trades_skipped + '</td>' +
+      '<td class="right">$' + (r.total_cost_cents / 100).toFixed(2) + '</td>' +
+    '</tr>';
+  }
+  document.getElementById('runs-body').innerHTML = html || '<tr><td colspan="7" style="text-align:center;color:var(--muted)">No runs yet</td></tr>';
+}
+
+// ---- Calibration ----
+function renderCalibration(trades) {
+  const settled = trades.filter(t =>
+    t.filled && !t.dry_run && t.observed_high_f !== null &&
+    (t.settlement_result === 'win' || t.settlement_result === 'loss')
+  );
+
+  const seen = new Set();
+  let html = '';
+  for (const t of settled) {
+    const key = t.target_date + '-' + t.city;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    // High
+    const fH = t.forecast_high_f !== null ? t.forecast_high_f : null;
+    const oH = t.observed_high_f !== null ? Math.round(t.observed_high_f) : null;
+    const errH = (fH !== null && oH !== null) ? oH - fH : null;
+    const errHClass = errH !== null ? (Math.abs(errH) > 5 ? 'red' : Math.abs(errH) > 3 ? 'yellow' : 'green') : '';
+    const ensMH = t.ensemble_mean_high !== null ? t.ensemble_mean_high + 'F' : '--';
+    const ensSH = t.ensemble_sd_high !== null ? '\u00B1' + t.ensemble_sd_high : '--';
+
+    html += '<tr>' +
+      '<td>' + t.target_date + '</td><td><strong>' + t.city + '</strong></td><td>High</td>' +
+      '<td class="right">' + (fH !== null ? fH + 'F' : '--') + '</td>' +
+      '<td class="right">' + (oH !== null ? oH + 'F' : '--') + '</td>' +
+      '<td class="right ' + errHClass + '">' + (errH !== null ? errH + 'F' : '--') + '</td>' +
+      '<td>' + ensMH + '</td><td>' + ensSH + '</td>' +
+    '</tr>';
+
+    // Low
+    const fL = t.forecast_low_f !== null ? t.forecast_low_f : null;
+    const oL = t.observed_low_f !== null ? Math.round(t.observed_low_f) : null;
+    const errL = (fL !== null && oL !== null) ? oL - fL : null;
+    const errLClass = errL !== null ? (Math.abs(errL) > 5 ? 'red' : Math.abs(errL) > 3 ? 'yellow' : 'green') : '';
+    const ensML = t.ensemble_mean_low !== null ? t.ensemble_mean_low + 'F' : '--';
+    const ensSL = t.ensemble_sd_low !== null ? '\u00B1' + t.ensemble_sd_low : '--';
+
+    html += '<tr>' +
+      '<td>' + t.target_date + '</td><td><strong>' + t.city + '</strong></td><td>Low</td>' +
+      '<td class="right">' + (fL !== null ? fL + 'F' : '--') + '</td>' +
+      '<td class="right">' + (oL !== null ? oL + 'F' : '--') + '</td>' +
+      '<td class="right ' + errLClass + '">' + (errL !== null ? errL + 'F' : '--') + '</td>' +
+      '<td>' + ensML + '</td><td>' + ensSL + '</td>' +
+    '</tr>';
+  }
+
+  document.getElementById('calibration-body').innerHTML = html || '<tr><td colspan="8" style="text-align:center;color:var(--muted)">No settled trades with observed data yet</td></tr>';
+}
+
+// ---- Live Weather ----
+async function loadLiveWeather() {
+  weatherLoaded = true;
+  try {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const dateStr = tomorrow.toISOString().split('T')[0];
+    const resp = await fetch(WORKER_URL + '/bundle?date=' + dateStr);
+    const data = await resp.json();
+
+    document.getElementById('weather-loading').style.display = 'none';
+    const grid = document.getElementById('weather-grid');
+    let html = '';
+
+    for (const [code, city] of Object.entries(data.cities || {})) {
+      const w = city.weather || {};
+      const ens = w.ensemble || {};
+      const current = w.current_temp_f !== null && w.current_temp_f !== undefined ? w.current_temp_f + 'F' : '--';
+      const fHigh = w.predicted_high_f !== null && w.predicted_high_f !== undefined ? w.predicted_high_f + 'F' : '--';
+      const fLow = w.predicted_low_f !== null && w.predicted_low_f !== undefined ? w.predicted_low_f + 'F' : '--';
+
+      let ensHtml = '';
+      if (ens.member_count && ens.member_count >= 10) {
+        const highM = ens.high_members || [];
+        const lowM = ens.low_members || [];
+        const meanH = highM.length ? (highM.reduce(function(a,b){return a+b;}, 0) / highM.length).toFixed(1) : '?';
+        const meanL = lowM.length ? (lowM.reduce(function(a,b){return a+b;}, 0) / lowM.length).toFixed(1) : '?';
+        const sdH = highM.length ? Math.sqrt(highM.reduce(function(s,v){return s + Math.pow(v - meanH, 2);}, 0) / highM.length).toFixed(1) : '?';
+        const sdL = lowM.length ? Math.sqrt(lowM.reduce(function(s,v){return s + Math.pow(v - meanL, 2);}, 0) / lowM.length).toFixed(1) : '?';
+        ensHtml =
+          '<div class="weather-row" style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px">' +
+            '<span style="color:var(--purple);font-weight:600">Ensemble (' + ens.member_count + 'm)</span>' +
+          '</div>' +
+          '<div class="weather-row"><span>High</span><span>' + meanH + 'F \u00B1' + sdH + '</span></div>' +
+          '<div class="weather-row"><span>Low</span><span>' + meanL + 'F \u00B1' + sdL + '</span></div>';
+      }
+
+      const highContracts = (city.markets && city.markets.high && city.markets.high.contracts || []).length;
+      const lowContracts = (city.markets && city.markets.low && city.markets.low.contracts || []).length;
+
+      html +=
+        '<div class="weather-card">' +
+          '<div class="weather-city">' + code + ' - ' + (city.city_name || '') + '</div>' +
+          '<div class="weather-temp">' + current + '</div>' +
+          '<div style="font-size:11px;color:var(--muted)">Current observation</div>' +
+          '<div class="weather-row"><span>Fcst High</span><span>' + fHigh + '</span></div>' +
+          '<div class="weather-row"><span>Fcst Low</span><span>' + fLow + '</span></div>' +
+          '<div class="weather-row"><span>Markets</span><span>' + (highContracts + lowContracts) + ' contracts</span></div>' +
+          ensHtml +
+        '</div>';
+    }
+    grid.innerHTML = html;
+  } catch (e) {
+    document.getElementById('weather-loading').innerHTML = 'Failed to load weather: ' + e.message;
+  }
+}
+
+// ---- Helpers ----
+function formatTime(iso) {
+  if (!iso) return '--';
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) + ' CT';
+  } catch (ex) { return iso; }
+}
+
+// ---- Init ----
+loadTradeData();
+</script>
+</body>
+</html>

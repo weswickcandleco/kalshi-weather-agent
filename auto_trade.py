@@ -41,7 +41,7 @@ from config import (
 
 from tools.kalshi_auth import load_private_key
 from tools.kalshi_trading import tool_get_account_balance, tool_place_order
-from tools.trade_log import log_trade, log_run, get_trade_history
+from tools.trade_log import log_trade, log_run, get_trade_history, get_existing_tickers, get_city_bet_count, export_dashboard_data
 from tools.notify import notify_bets_placed, notify_error
 
 # ---------------------------------------------------------------------------
@@ -51,20 +51,21 @@ from tools.notify import notify_bets_placed, notify_error
 MIN_EV_CENTS = 5       # minimum EV to place a bet
 MIN_PRICE_CENTS = 15   # mirrors kalshi_trading.py guardrail
 MAX_PRICE_CENTS = 85   # mirrors kalshi_trading.py guardrail
+MAX_BETS_PER_CITY = 2  # max bets per city per day
 
 CONTRACT_RE = re.compile(r"KX(HIGH|LOWT)([A-Z]+)-\d+[A-Z]+\d+-([BT])([\d\.]+)")
 
 # NWS Day-1 forecast error standard deviations (Fahrenheit) by city and season
 FORECAST_ERROR_SD = {
-    "CHI":  {"winter": 4.0, "spring": 3.2, "summer": 2.2, "autumn": 3.0},
-    "NYC":  {"winter": 3.5, "spring": 2.8, "summer": 2.0, "autumn": 2.8},
-    "MIA":  {"winter": 2.0, "spring": 1.8, "summer": 1.5, "autumn": 1.8},
-    "LAX":  {"winter": 2.0, "spring": 2.2, "summer": 1.5, "autumn": 2.5},
-    "AUS":  {"winter": 3.0, "spring": 2.5, "summer": 2.0, "autumn": 2.5},
-    "DEN":  {"winter": 4.5, "spring": 3.5, "summer": 2.5, "autumn": 3.5},
-    "PHIL": {"winter": 3.5, "spring": 2.8, "summer": 2.0, "autumn": 2.8},
+    "CHI":  {"winter": 7.0, "spring": 5.5, "summer": 4.0, "autumn": 5.5},
+    "NYC":  {"winter": 6.0, "spring": 5.0, "summer": 3.5, "autumn": 5.0},
+    "MIA":  {"winter": 4.0, "spring": 3.5, "summer": 3.0, "autumn": 3.5},
+    "LAX":  {"winter": 4.5, "spring": 4.0, "summer": 3.5, "autumn": 5.0},
+    "AUS":  {"winter": 6.0, "spring": 5.0, "summer": 4.0, "autumn": 5.0},
+    "DEN":  {"winter": 8.0, "spring": 6.5, "summer": 4.5, "autumn": 6.0},
+    "PHIL": {"winter": 6.0, "spring": 5.0, "summer": 3.5, "autumn": 5.0},
 }
-_DEFAULT_SD = {"winter": 3.5, "spring": 3.0, "summer": 2.0, "autumn": 3.0}
+_DEFAULT_SD = {"winter": 6.0, "spring": 5.0, "summer": 3.5, "autumn": 5.0}
 
 
 # ---------------------------------------------------------------------------
@@ -84,7 +85,7 @@ def _get_season(date_str):
 
 
 def _contract_prob(ticker, forecast_high, forecast_low, season, yes_sub_title=""):
-    """Compute P(YES wins) for a contract given NWS forecast temps."""
+    """Compute P(YES wins) for a contract given NWS forecast temps (hardcoded SD fallback)."""
     m = CONTRACT_RE.search(ticker)
     if not m:
         return None, None
@@ -110,6 +111,48 @@ def _contract_prob(ticker, forecast_high, forecast_low, season, yes_sub_title=""
             prob = norm.cdf(threshold - 0.5, forecast, sd)
         else:
             prob = 1.0 - norm.cdf(threshold + 0.5, forecast, sd)
+
+    return max(0.0, min(1.0, prob)), city
+
+
+def _contract_prob_ensemble(ticker, ensemble_data, yes_sub_title=""):
+    """Compute P(YES wins) using ensemble member data (empirical distribution).
+
+    Uses the actual spread of 100+ weather model runs instead of a hardcoded
+    standard deviation. Falls back to None if ensemble data is insufficient.
+    """
+    m = CONTRACT_RE.search(ticker)
+    if not m:
+        return None, None
+    temp_type = m.group(1)
+    city = m.group(2)
+    bet_type = m.group(3)
+    value = float(m.group(4))
+
+    if temp_type == "HIGH":
+        members = ensemble_data.get("high_members", [])
+    else:
+        members = ensemble_data.get("low_members", [])
+
+    if not members or len(members) < 10:
+        return None, city
+
+    n = len(members)
+
+    if bet_type == "B":
+        # Bracket contract: temp lands in [value, value+1] (2-degree bucket)
+        low_bound = int(value)
+        high_bound = low_bound + 1
+        count = sum(1 for t in members if low_bound - 0.5 <= t <= high_bound + 0.5)
+        prob = count / n
+    else:
+        # Threshold contract
+        threshold = int(value)
+        if "below" in yes_sub_title.lower():
+            count = sum(1 for t in members if t < threshold - 0.5)
+        else:
+            count = sum(1 for t in members if t >= threshold + 0.5)
+        prob = count / n
 
     return max(0.0, min(1.0, prob)), city
 
@@ -151,26 +194,92 @@ def fetch_bundle(target_date, cities):
 # Bet selection engine
 # ---------------------------------------------------------------------------
 
-def find_bets(bundle, target_date):
+def find_bets(bundle, target_date, market_type="all"):
     """Scan all contracts and return a list of positive-EV bets to place.
+
+    Applies all guardrails:
+    - Deduplication: skip tickers we already have positions on
+    - City limits: max MAX_BETS_PER_CITY bets per city per day
+    - Contradictory bet blocking: don't bet opposite sides on same contract
+    - Negative-EV blocking: only bet when EV > MIN_EV_CENTS
 
     Each bet dict has: ticker, side, yes_price_cents, contracts, cost_cents,
     ev_cents, model_prob, city, title
     """
     season = _get_season(target_date)
+
+    # --- Guardrail: Deduplication ---
+    existing_positions = get_existing_tickers(target_date)
+    existing_tickers = {ticker for ticker, _ in existing_positions}
+    if existing_tickers:
+        print(f"  [DEDUP] Already have {len(existing_tickers)} position(s) for {target_date}")
+
+    # --- Guardrail: City limits ---
+    city_counts = get_city_bet_count(target_date)
+
     bets = []
 
     for code, city in bundle.get("cities", {}).items():
+        # Check city limit before scanning
+        existing_city_bets = city_counts.get(code, 0)
+        if existing_city_bets >= MAX_BETS_PER_CITY:
+            print(f"  [LIMIT] {code}: already has {existing_city_bets} bet(s), skipping (max {MAX_BETS_PER_CITY})")
+            continue
+
         w = city.get("weather", {})
         forecast_high = w.get("predicted_high_f")
         forecast_low = w.get("predicted_low_f")
 
-        for mtype in ("high", "low"):
+        # Check for ensemble data and compute stats
+        ensemble = w.get("ensemble") or {}
+        has_ensemble = ensemble.get("member_count", 0) >= 10 and not ensemble.get("error")
+        ens_stats = {}
+        if has_ensemble:
+            high_m = ensemble.get("high_members", [])
+            low_m = ensemble.get("low_members", [])
+            ens_stats["count"] = ensemble.get("member_count", 0)
+            if high_m:
+                mean_h = sum(high_m) / len(high_m)
+                sd_h = (sum((t - mean_h) ** 2 for t in high_m) / len(high_m)) ** 0.5
+                ens_stats["mean_high"] = round(mean_h, 1)
+                ens_stats["sd_high"] = round(sd_h, 1)
+            if low_m:
+                mean_l = sum(low_m) / len(low_m)
+                sd_l = (sum((t - mean_l) ** 2 for t in low_m) / len(low_m)) ** 0.5
+                ens_stats["mean_low"] = round(mean_l, 1)
+                ens_stats["sd_low"] = round(sd_l, 1)
+            print(f"  [ENSEMBLE] {code}: {ens_stats['count']} members | "
+                  f"high={ens_stats.get('mean_high', '?')}F +/-{ens_stats.get('sd_high', '?')} | "
+                  f"low={ens_stats.get('mean_low', '?')}F +/-{ens_stats.get('sd_low', '?')}")
+        else:
+            ens_err = ensemble.get("error", "no data")
+            print(f"  [ENSEMBLE] {code}: unavailable ({ens_err}), using SD model")
+
+        current_temp = w.get("current_temp_f")
+        city_new_bets = 0
+        city_bets_buffer = []
+
+        market_types = ("high", "low") if market_type == "all" else (market_type,)
+        for mtype in market_types:
             mdata = city.get("markets", {}).get(mtype, {})
             for c in mdata.get("contracts", []):
                 ticker = c["ticker"]
                 yes_sub = c.get("yes_sub_title", "")
-                prob, _ = _contract_prob(ticker, forecast_high, forecast_low, season, yes_sub)
+
+                # --- Guardrail: Deduplication ---
+                if ticker in existing_tickers:
+                    print(f"  [DEDUP] Skipping {ticker} -- already have a position")
+                    continue
+
+                # Try ensemble-based probability first, fall back to hardcoded SD
+                prob = None
+                prob_source = "sd_model"
+                if has_ensemble:
+                    prob, _ = _contract_prob_ensemble(ticker, ensemble, yes_sub)
+                    if prob is not None:
+                        prob_source = "ensemble"
+                if prob is None:
+                    prob, _ = _contract_prob(ticker, forecast_high, forecast_low, season, yes_sub)
                 if prob is None:
                     continue
 
@@ -196,7 +305,7 @@ def find_bets(bundle, target_date):
                     cost_no = None
                     ev_no = None
 
-                # Pick the best side (if any meets threshold)
+                # --- Guardrail: Block negative-EV bets ---
                 candidates = []
                 if ev_yes is not None and ev_yes >= MIN_EV_CENTS and MIN_PRICE_CENTS <= cost_yes <= MAX_PRICE_CENTS:
                     candidates.append(("yes", cost_yes, ev_yes))
@@ -210,6 +319,13 @@ def find_bets(bundle, target_date):
                 best = max(candidates, key=lambda x: x[2])
                 side, cost, ev = best
 
+                # --- Guardrail: Contradictory bet blocking ---
+                # Don't bet opposite side of a ticker we already hold
+                opposite = "no" if side == "yes" else "yes"
+                if (ticker, opposite) in existing_positions:
+                    print(f"  [CONFLICT] Skipping {side.upper()} on {ticker} -- already hold {opposite.upper()}")
+                    continue
+
                 # Determine yes_price_cents for the order
                 if side == "yes":
                     yes_price_cents = cost
@@ -221,7 +337,7 @@ def find_bets(bundle, target_date):
                 if contracts < 1:
                     contracts = 1
 
-                bets.append({
+                city_bets_buffer.append({
                     "ticker": ticker,
                     "side": side,
                     "yes_price_cents": yes_price_cents,
@@ -229,11 +345,27 @@ def find_bets(bundle, target_date):
                     "cost_cents": cost * contracts,
                     "ev_cents": round(ev, 1),
                     "model_prob": round(prob, 3),
+                    "prob_source": prob_source,
                     "city": code,
                     "title": yes_sub,
                     "forecast_high_f": forecast_high,
                     "forecast_low_f": forecast_low,
+                    "ensemble_member_count": ens_stats.get("count"),
+                    "ensemble_mean_high": ens_stats.get("mean_high"),
+                    "ensemble_mean_low": ens_stats.get("mean_low"),
+                    "ensemble_sd_high": ens_stats.get("sd_high"),
+                    "ensemble_sd_low": ens_stats.get("sd_low"),
+                    "current_temp_f": current_temp,
                 })
+
+        # --- Guardrail: City limit (for new bets this run) ---
+        city_bets_buffer.sort(key=lambda b: b["ev_cents"], reverse=True)
+        slots_left = MAX_BETS_PER_CITY - existing_city_bets
+        for bet in city_bets_buffer[:slots_left]:
+            bets.append(bet)
+        if len(city_bets_buffer) > slots_left:
+            skipped = len(city_bets_buffer) - slots_left
+            print(f"  [LIMIT] {code}: capped at {slots_left} new bet(s), skipped {skipped} lower-EV")
 
     # Sort by EV descending (best bets first)
     bets.sort(key=lambda b: b["ev_cents"], reverse=True)
@@ -311,6 +443,13 @@ def execute_bets(bets, pk, api_key_id, base_url, dry_run, mode, target_date):
             est_probability=bet["model_prob"],
             expected_value_cents=bet["ev_cents"],
             filled=filled, order_id=order_id, dry_run=dry_run,
+            prob_source=bet.get("prob_source"),
+            ensemble_member_count=bet.get("ensemble_member_count"),
+            ensemble_mean_high=bet.get("ensemble_mean_high"),
+            ensemble_mean_low=bet.get("ensemble_mean_low"),
+            ensemble_sd_high=bet.get("ensemble_sd_high"),
+            ensemble_sd_low=bet.get("ensemble_sd_low"),
+            current_temp_f=bet.get("current_temp_f"),
         )
 
         results.append(bet)
@@ -329,6 +468,8 @@ def main():
     group.add_argument("--demo", action="store_true", help="Place bets on demo account")
     parser.add_argument("--date", type=str, default=None, help="Target date (YYYY-MM-DD)")
     parser.add_argument("--cities", nargs="+", default=None, help="City codes (e.g. CHI NYC)")
+    parser.add_argument("--market-type", choices=["all", "high", "low"], default="all",
+                        help="Only bet on high or low contracts (default: all)")
     args = parser.parse_args()
 
     load_dotenv()
@@ -382,6 +523,7 @@ def main():
     print(f"  Cities: {', '.join(valid_cities)}")
     print(f"  Season: {season}")
     print(f"  Mode:   {mode}")
+    print(f"  Market: {args.market_type.upper()}")
     print(f"  EV threshold: +{MIN_EV_CENTS}c | Price range: {MIN_PRICE_CENTS}-{MAX_PRICE_CENTS}c")
     print(f"{'=' * 60}")
 
@@ -398,23 +540,60 @@ def main():
         notify_error("auto_trade.py", f"Worker fetch failed: {e}")
         sys.exit(1)
 
+    # Step 1b: Cross-check forecasts (sanity check)
+    print(f"\n[CHECK] Cross-checking forecasts...")
+    for code, city in bundle.get("cities", {}).items():
+        w = city.get("weather", {})
+        pred_high = w.get("predicted_high_f")
+        pred_low = w.get("predicted_low_f")
+        current = w.get("current_temp_f")
+        hourly = w.get("hourly", [])
+
+        if pred_high is None or pred_low is None:
+            print(f"  [CHECK] {code}: NO FORECAST DATA -- skipping this city")
+            # Remove city from bundle so find_bets won't touch it
+            bundle["cities"][code]["weather"]["predicted_high_f"] = None
+            bundle["cities"][code]["weather"]["predicted_low_f"] = None
+            continue
+
+        # Check if current observation already exceeds forecast
+        if current is not None:
+            if current > pred_high + 3:
+                print(f"  [CHECK] {code}: Current temp {current}F already exceeds forecast high {pred_high}F by {current - pred_high:.0f}F -- forecast may be stale")
+            if current < pred_low - 3:
+                print(f"  [CHECK] {code}: Current temp {current}F already below forecast low {pred_low}F by {pred_low - current:.0f}F -- forecast may be stale")
+
+        # Check hourly spread vs predicted range
+        if hourly:
+            hourly_temps = [h.get("temp_f") for h in hourly if h.get("temp_f") is not None]
+            if hourly_temps:
+                hourly_high = max(hourly_temps)
+                hourly_low = min(hourly_temps)
+                if abs(hourly_high - pred_high) > 3:
+                    print(f"  [CHECK] {code}: Hourly max {hourly_high}F differs from predicted high {pred_high}F by {abs(hourly_high - pred_high):.0f}F")
+                if abs(hourly_low - pred_low) > 3:
+                    print(f"  [CHECK] {code}: Hourly min {hourly_low}F differs from predicted low {pred_low}F by {abs(hourly_low - pred_low):.0f}F")
+
     # Step 2: Find positive-EV bets
     print(f"\n[MODEL] Scanning contracts...")
-    bets = find_bets(bundle, target_date)
+    market_type = args.market_type
+    bets = find_bets(bundle, target_date, market_type=market_type)
     print(f"[MODEL] Found {len(bets)} positive-EV bet(s)")
 
     if not bets:
         print("\nNo bets today -- no contracts met the EV threshold.")
         # Log the run even if no bets
         log_run(mode, target_date, valid_cities, 0, 0, 0)
+        _export_dashboard_json()
         return
 
     # Print summary table
-    print(f"\n{'Ticker':<30} {'Side':<4} {'Cost':>5} {'EV':>5} {'Prob':>5}")
-    print(f"{'-'*30} {'-'*4} {'-'*5} {'-'*5} {'-'*5}")
+    print(f"\n{'Ticker':<30} {'Side':<4} {'Cost':>5} {'EV':>5} {'Prob':>5} {'Source':<8}")
+    print(f"{'-'*30} {'-'*4} {'-'*5} {'-'*5} {'-'*5} {'-'*8}")
     for b in bets:
         cost_per = b["cost_cents"] // b["contracts"]
-        print(f"{b['ticker']:<30} {b['side'].upper():<4} {cost_per:>4}c {b['ev_cents']:>+4.0f}c {b['model_prob']:>5.2f}")
+        src = b.get("prob_source", "sd")[:8]
+        print(f"{b['ticker']:<30} {b['side'].upper():<4} {cost_per:>4}c {b['ev_cents']:>+4.0f}c {b['model_prob']:>5.2f} {src:<8}")
 
     # Step 3: Check balance (if not dry run)
     if not dry_run:
@@ -454,6 +633,23 @@ def main():
     print(f"  Placed: {len(results)} bet(s) | Cost: ${total_cost/100:.2f} | Total EV: +{total_ev:.0f}c")
     print(f"  API cost: $0.00")
     print(f"{'=' * 60}\n")
+
+    # Step 7: Export dashboard data
+    _export_dashboard_json()
+
+
+def _export_dashboard_json():
+    """Export all trade/run data to dashboard/data.json for the live dashboard."""
+    try:
+        dashboard_dir = os.path.join(os.path.dirname(__file__), "dashboard")
+        os.makedirs(dashboard_dir, exist_ok=True)
+        data = export_dashboard_data()
+        out_path = os.path.join(dashboard_dir, "data.json")
+        with open(out_path, "w") as f:
+            json.dump(data, f, indent=2, default=str)
+        print(f"[EXPORT] Dashboard data written to dashboard/data.json")
+    except Exception as e:
+        print(f"[EXPORT] Failed: {e}")
 
 
 if __name__ == "__main__":

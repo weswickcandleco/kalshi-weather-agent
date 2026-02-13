@@ -37,10 +37,21 @@ def _get_db():
             payout_cents INTEGER DEFAULT 0
         )
     """)
-    # Add observed temp columns if they don't exist (for calibration)
-    for col in ("observed_high_f", "observed_low_f"):
+    # Add columns if they don't exist (migrations)
+    _migrate_cols = [
+        ("observed_high_f", "REAL"),
+        ("observed_low_f", "REAL"),
+        ("prob_source", "TEXT"),
+        ("ensemble_member_count", "INTEGER"),
+        ("ensemble_mean_high", "REAL"),
+        ("ensemble_mean_low", "REAL"),
+        ("ensemble_sd_high", "REAL"),
+        ("ensemble_sd_low", "REAL"),
+        ("current_temp_f", "REAL"),
+    ]
+    for col, ctype in _migrate_cols:
         try:
-            db.execute(f"ALTER TABLE trades ADD COLUMN {col} REAL")
+            db.execute(f"ALTER TABLE trades ADD COLUMN {col} {ctype}")
         except sqlite3.OperationalError:
             pass  # column already exists
     db.execute("""
@@ -81,7 +92,11 @@ def log_run(mode, target_date, cities, trades_placed, trades_skipped,
 def log_trade(mode, target_date, city, ticker, title, side, yes_price_cents,
               contracts, forecast_high_f=None, forecast_low_f=None,
               est_probability=None, expected_value_cents=None,
-              filled=False, order_id=None, dry_run=False):
+              filled=False, order_id=None, dry_run=False,
+              prob_source=None, ensemble_member_count=None,
+              ensemble_mean_high=None, ensemble_mean_low=None,
+              ensemble_sd_high=None, ensemble_sd_low=None,
+              current_temp_f=None):
     """Log a single trade to the database."""
     db = _get_db()
     now = datetime.datetime.now(CST).isoformat()
@@ -97,12 +112,19 @@ def log_trade(mode, target_date, city, ticker, title, side, yes_price_cents,
            (timestamp, mode, target_date, city, ticker, title, side,
             yes_price_cents, cost_cents, contracts, potential_profit_cents,
             forecast_high_f, forecast_low_f, est_probability,
-            expected_value_cents, filled, order_id, dry_run)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            expected_value_cents, filled, order_id, dry_run,
+            prob_source, ensemble_member_count,
+            ensemble_mean_high, ensemble_mean_low,
+            ensemble_sd_high, ensemble_sd_low, current_temp_f)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                   ?, ?, ?, ?, ?, ?, ?)""",
         (now, mode, target_date, city, ticker, title, side,
          yes_price_cents, cost_cents, contracts, potential_profit_cents,
          forecast_high_f, forecast_low_f, est_probability,
-         expected_value_cents, int(filled), order_id, int(dry_run)),
+         expected_value_cents, int(filled), order_id, int(dry_run),
+         prob_source, ensemble_member_count,
+         ensemble_mean_high, ensemble_mean_low,
+         ensemble_sd_high, ensemble_sd_low, current_temp_f),
     )
     db.commit()
     db.close()
@@ -166,6 +188,28 @@ def get_pnl_summary(mode=None):
     return result
 
 
+def get_existing_tickers(target_date):
+    """Get set of tickers we already have bets on for a given target date."""
+    db = _get_db()
+    rows = db.execute(
+        "SELECT ticker, side FROM trades WHERE target_date = ? AND dry_run = 0",
+        (target_date,),
+    ).fetchall()
+    db.close()
+    return {(row["ticker"], row["side"]) for row in rows}
+
+
+def get_city_bet_count(target_date):
+    """Get count of bets per city for a given target date."""
+    db = _get_db()
+    rows = db.execute(
+        "SELECT city, COUNT(*) as cnt FROM trades WHERE target_date = ? AND dry_run = 0 GROUP BY city",
+        (target_date,),
+    ).fetchall()
+    db.close()
+    return {row["city"]: row["cnt"] for row in rows}
+
+
 def update_settlement(ticker, target_date, result, payout_cents=0,
                       observed_high_f=None, observed_low_f=None):
     """Update settlement result for trades on a given ticker and date."""
@@ -178,6 +222,41 @@ def update_settlement(ticker, target_date, result, payout_cents=0,
     )
     db.commit()
     db.close()
+
+
+def export_dashboard_data():
+    """Export all trade and run data as a JSON-serializable dict for the dashboard."""
+    trades = get_trade_history(limit=500)
+    runs = get_run_history(limit=100)
+    pnl = get_pnl_summary()
+
+    # Per-date breakdown
+    dates = {}
+    for t in trades:
+        d = t["target_date"]
+        if d not in dates:
+            dates[d] = {"trades": [], "total_cost_cents": 0, "wins": 0, "losses": 0, "pending": 0}
+        dates[d]["trades"].append(t)
+        if t["filled"] and not t["dry_run"]:
+            dates[d]["total_cost_cents"] += t["cost_cents"]
+            sr = t.get("settlement_result", "pending")
+            if sr == "win":
+                dates[d]["wins"] += 1
+            elif sr == "loss":
+                dates[d]["losses"] += 1
+            else:
+                dates[d]["pending"] += 1
+
+    return {
+        "exported_at": datetime.datetime.now(CST).isoformat(),
+        "trades": trades,
+        "runs": runs,
+        "pnl": pnl,
+        "by_date": {d: {"total_cost_cents": v["total_cost_cents"],
+                        "wins": v["wins"], "losses": v["losses"],
+                        "pending": v["pending"], "trade_count": len(v["trades"])}
+                    for d, v in dates.items()},
+    }
 
 
 def print_history(limit=30, mode=None):

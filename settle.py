@@ -10,8 +10,10 @@ Usage:
   python3 settle.py --date 2026-02-12  # settle a specific date
 """
 
+import os
 import re
 import sys
+import json
 import time
 import argparse
 import datetime
@@ -284,6 +286,18 @@ def main():
         print(f"ERROR: {e}")
         notify_error("settle.py", str(e))
         sys.exit(1)
+
+    # Export updated dashboard data
+    try:
+        from tools.trade_log import export_dashboard_data
+        dashboard_dir = os.path.join(os.path.dirname(__file__), "dashboard")
+        os.makedirs(dashboard_dir, exist_ok=True)
+        data = export_dashboard_data()
+        with open(os.path.join(dashboard_dir, "data.json"), "w") as f:
+            json.dump(data, f, indent=2, default=str)
+        print(f"[EXPORT] Dashboard data updated")
+    except Exception as e:
+        print(f"[EXPORT] Failed: {e}")
 
 
 if __name__ == "__main__":

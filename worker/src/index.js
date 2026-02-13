@@ -3,13 +3,13 @@
 // Uses authenticated Kalshi API requests (RSA-PSS signing)
 
 const CITY_CONFIGS = {
-  CHI: { name: "Chicago Midway", station: "KMDW", lat: 41.786, lon: -87.752, high: "KXHIGHCHI", low: "KXLOWTCHI", tz: "America/Chicago" },
-  NYC: { name: "New York (Central Park)", station: "KNYC", lat: 40.7789, lon: -73.9692, high: "KXHIGHNYC", low: "KXLOWTNYC", tz: "America/New_York" },
-  MIA: { name: "Miami", station: "KMIA", lat: 25.7959, lon: -80.287, high: "KXHIGHMIA", low: "KXLOWTMIA", tz: "America/New_York" },
-  LAX: { name: "Los Angeles", station: "KLAX", lat: 33.9425, lon: -118.4081, high: "KXHIGHLAX", low: "KXLOWTLAX", tz: "America/Los_Angeles" },
-  AUS: { name: "Austin", station: "KAUS", lat: 30.1945, lon: -97.6699, high: "KXHIGHAUS", low: "KXLOWTAUS", tz: "America/Chicago" },
-  DEN: { name: "Denver", station: "KDEN", lat: 39.8561, lon: -104.6737, high: "KXHIGHDEN", low: "KXLOWTDEN", tz: "America/Denver" },
-  PHIL: { name: "Philadelphia", station: "KPHL", lat: 39.8721, lon: -75.2411, high: "KXHIGHPHI", low: "KXLOWTPHI", tz: "America/New_York" },
+  CHI: { name: "Chicago Midway", station: "KMDW", lat: 41.78412, lon: -87.75514, high: "KXHIGHCHI", low: "KXLOWTCHI", tz: "America/Chicago" },
+  NYC: { name: "New York (Central Park)", station: "KNYC", lat: 40.77898, lon: -73.96925, high: "KXHIGHNYC", low: "KXLOWTNYC", tz: "America/New_York" },
+  MIA: { name: "Miami", station: "KMIA", lat: 25.78805, lon: -80.31694, high: "KXHIGHMIA", low: "KXLOWTMIA", tz: "America/New_York" },
+  LAX: { name: "Los Angeles", station: "KLAX", lat: 33.93816, lon: -118.38660, high: "KXHIGHLAX", low: "KXLOWTLAX", tz: "America/Los_Angeles" },
+  AUS: { name: "Austin", station: "KAUS", lat: 30.18311, lon: -97.67989, high: "KXHIGHAUS", low: "KXLOWTAUS", tz: "America/Chicago" },
+  DEN: { name: "Denver", station: "KDEN", lat: 39.84657, lon: -104.65623, high: "KXHIGHDEN", low: "KXLOWTDEN", tz: "America/Denver" },
+  PHIL: { name: "Philadelphia", station: "KPHL", lat: 39.87326, lon: -75.22681, high: "KXHIGHPHI", low: "KXLOWTPHI", tz: "America/New_York" },
 };
 
 const NWS_HEADERS = { "User-Agent": "KalshiWeatherAgent/2.0 (cloudflare-worker)" };
@@ -231,15 +231,52 @@ async function fetchMarkets(env, seriesTicker, targetDate) {
   }
 }
 
+async function fetchEnsemble(config, targetDate) {
+  try {
+    const url = `https://ensemble-api.open-meteo.com/v1/ensemble?latitude=${config.lat}&longitude=${config.lon}&daily=temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&start_date=${targetDate}&end_date=${targetDate}&models=ecmwf_ifs025,gfs_seamless,icon_seamless`;
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+
+    const daily = data.daily || {};
+    const highMembers = [];
+    const lowMembers = [];
+
+    // Collect all ensemble member values -- keys look like:
+    //   temperature_2m_max_ecmwf_ifs025_ensemble          (control run)
+    //   temperature_2m_max_member01_ecmwf_ifs025_ensemble  (perturbation)
+    for (const key of Object.keys(daily)) {
+      if (key === "time") continue;
+      const vals = daily[key];
+      if (!Array.isArray(vals) || vals.length === 0 || vals[0] === null) continue;
+      if (key.startsWith("temperature_2m_max")) {
+        highMembers.push(vals[0]);
+      } else if (key.startsWith("temperature_2m_min")) {
+        lowMembers.push(vals[0]);
+      }
+    }
+
+    return {
+      high_members: highMembers,
+      low_members: lowMembers,
+      member_count: Math.max(highMembers.length, lowMembers.length),
+      error: null,
+    };
+  } catch (e) {
+    return { high_members: [], low_members: [], member_count: 0, error: e.message };
+  }
+}
+
 async function fetchCityBundle(env, _code, config, targetDate) {
-  const [weather, high, low] = await Promise.all([
+  const [weather, high, low, ensemble] = await Promise.all([
     fetchWeather(config, targetDate),
     fetchMarkets(env, config.high, targetDate),
     fetchMarkets(env, config.low, targetDate),
+    fetchEnsemble(config, targetDate),
   ]);
   return {
     city_name: config.name, station: config.station,
-    weather,
+    weather: { ...weather, ensemble },
     markets: {
       high: { series_ticker: config.high, ...high },
       low: { series_ticker: config.low, ...low },

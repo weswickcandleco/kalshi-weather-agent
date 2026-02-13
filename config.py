@@ -15,8 +15,8 @@ CITY_CONFIGS = {
     "CHI": {
         "name": "Chicago Midway",
         "station": "KMDW",
-        "lat": 41.786,
-        "lon": -87.752,
+        "lat": 41.78412,
+        "lon": -87.75514,
         "high_ticker": "KXHIGHCHI",
         "low_ticker": "KXLOWTCHI",
         "tz": "America/Chicago",
@@ -24,8 +24,8 @@ CITY_CONFIGS = {
     "NYC": {
         "name": "New York (Central Park)",
         "station": "KNYC",
-        "lat": 40.7789,
-        "lon": -73.9692,
+        "lat": 40.77898,
+        "lon": -73.96925,
         "high_ticker": "KXHIGHNYC",
         "low_ticker": "KXLOWTNYC",
         "tz": "America/New_York",
@@ -33,8 +33,8 @@ CITY_CONFIGS = {
     "MIA": {
         "name": "Miami",
         "station": "KMIA",
-        "lat": 25.7959,
-        "lon": -80.287,
+        "lat": 25.78805,
+        "lon": -80.31694,
         "high_ticker": "KXHIGHMIA",
         "low_ticker": "KXLOWTMIA",
         "tz": "America/New_York",
@@ -42,8 +42,8 @@ CITY_CONFIGS = {
     "LAX": {
         "name": "Los Angeles",
         "station": "KLAX",
-        "lat": 33.9425,
-        "lon": -118.4081,
+        "lat": 33.93816,
+        "lon": -118.38660,
         "high_ticker": "KXHIGHLAX",
         "low_ticker": "KXLOWTLAX",
         "tz": "America/Los_Angeles",
@@ -51,8 +51,8 @@ CITY_CONFIGS = {
     "AUS": {
         "name": "Austin",
         "station": "KAUS",
-        "lat": 30.1945,
-        "lon": -97.6699,
+        "lat": 30.18311,
+        "lon": -97.67989,
         "high_ticker": "KXHIGHAUS",
         "low_ticker": "KXLOWTAUS",
         "tz": "America/Chicago",
@@ -60,8 +60,8 @@ CITY_CONFIGS = {
     "DEN": {
         "name": "Denver",
         "station": "KDEN",
-        "lat": 39.8561,
-        "lon": -104.6737,
+        "lat": 39.84657,
+        "lon": -104.65623,
         "high_ticker": "KXHIGHDEN",
         "low_ticker": "KXLOWTDEN",
         "tz": "America/Denver",
@@ -69,8 +69,8 @@ CITY_CONFIGS = {
     "PHIL": {
         "name": "Philadelphia",
         "station": "KPHL",
-        "lat": 39.8721,
-        "lon": -75.2411,
+        "lat": 39.87326,
+        "lon": -75.22681,
         "high_ticker": "KXHIGHPHI",
         "low_ticker": "KXLOWTPHI",
         "tz": "America/New_York",
@@ -85,7 +85,7 @@ KALSHI_DEMO_BASE = "https://demo-api.kalshi.co"
 MAX_BET_DOLLARS = 5.00
 MAX_CONTRACTS_PER_ORDER = 5
 MIN_EDGE_CENTS = 5
-MAX_RUN_DOLLARS = 8.00  # max total spend per agent run (keeps $2 reserve on a $10 account)
+MAX_RUN_DOLLARS = 4.00  # max total spend per run ($4 lows evening + $4 highs morning = $8/day)
 
 # Cloudflare Worker (pre-fetches NWS + Kalshi data, returns bundled JSON)
 WORKER_URL = "https://kalshi-weather-data.wes-432.workers.dev"

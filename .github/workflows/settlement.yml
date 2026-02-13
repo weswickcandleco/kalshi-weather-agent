@@ -9,6 +9,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: kalshi-bot
+  cancel-in-progress: false
+
 jobs:
   settle:
     runs-on: ubuntu-latest
@@ -38,11 +42,11 @@ jobs:
       - name: Run settlement checker
         run: python settle.py
 
-      - name: Commit updated trades.db
+      - name: Commit updated trades.db and dashboard data
         run: |
           git config user.name "kalshi-bot"
           git config user.email "bot@kalshi-agent.local"
           git pull --rebase origin main || true
-          git add trades.db
-          git diff --cached --quiet || git commit -m "bot: trades.db after settlement $(date -u +%Y-%m-%d)"
+          git add trades.db dashboard/data.json
+          git diff --cached --quiet || git commit -m "bot: trades.db + dashboard after settlement $(date -u +%Y-%m-%d)"
           git push
