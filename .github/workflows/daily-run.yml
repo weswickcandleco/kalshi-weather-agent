@@ -1,4 +1,4 @@
-name: Daily Agent Run
+name: Daily Auto-Trade
 
 on:
   schedule:
@@ -10,9 +10,9 @@ permissions:
   contents: write
 
 jobs:
-  run-agent:
+  auto-trade:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 10
 
     steps:
       - name: Checkout repo
@@ -38,23 +38,20 @@ jobs:
 
       - name: Create .env
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           KALSHI_PROD_API_KEY_ID: ${{ secrets.KALSHI_PROD_API_KEY_ID }}
           KALSHI_DEMO_API_KEY_ID: ${{ secrets.KALSHI_DEMO_API_KEY_ID }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
           cat > .env <<EOF
-          ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
           KALSHI_PROD_API_KEY_ID=${KALSHI_PROD_API_KEY_ID}
           KALSHI_PROD_PRIVATE_KEY_PATH=./kalshi-prod-private-key.pem
           KALSHI_DEMO_API_KEY_ID=${KALSHI_DEMO_API_KEY_ID}
           KALSHI_DEMO_PRIVATE_KEY_PATH=./kalshi-private-key.pem
           DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
-          WORKER_URL=https://kalshi-weather-data.wes-432.workers.dev
           EOF
 
-      - name: Run agent (live)
-        run: python agent.py --live
+      - name: Run auto-trader (live)
+        run: python auto_trade.py --live
 
       - name: Commit updated trades.db
         run: |
