@@ -91,7 +91,7 @@ MAX_RUN_DOLLARS = 8.00  # max total spend per agent run (keeps $2 reserve on a $
 WORKER_URL = "https://kalshi-weather-data.wes-432.workers.dev"
 
 # Agent limits
-MAX_AGENT_TURNS = 3
+MAX_AGENT_TURNS = 10
 
 # Claude model for the agentic loop
 CLAUDE_MODEL = "claude-haiku-4-5-20251001"
