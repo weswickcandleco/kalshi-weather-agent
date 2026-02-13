@@ -132,8 +132,12 @@ TRADING_TOOL_DEFINITIONS = [
                     "type": "integer",
                     "description": "Number of contracts (max 5)",
                 },
+                "est_probability": {
+                    "type": "number",
+                    "description": "Your estimated probability of winning (0.0 to 1.0). Used for calibration tracking.",
+                },
             },
-            "required": ["ticker", "side", "yes_price_cents", "contracts"],
+            "required": ["ticker", "side", "yes_price_cents", "contracts", "est_probability"],
         },
     },
 ]

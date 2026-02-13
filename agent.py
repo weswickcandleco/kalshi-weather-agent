@@ -264,10 +264,16 @@ def dispatch_tool(name, inp, pk, api_key_id, base_url, dry_run, mode="", target_
                     order_data = resp.get("order", resp)
                     filled = order_data.get("fill_count", 0) > 0
                     order_id = order_data.get("order_id", order_data.get("client_order_id"))
+                est_prob = inp.get("est_probability")
+                ev = None
+                if est_prob is not None:
+                    cost_c = ypc if side == "yes" else 100 - ypc
+                    ev = est_prob * (100 - cost_c) - (1 - est_prob) * cost_c
                 log_trade(
                     mode=mode, target_date=target_date, city=city,
                     ticker=ticker, title="", side=side,
                     yes_price_cents=ypc, contracts=count,
+                    est_probability=est_prob, expected_value_cents=ev,
                     filled=filled, order_id=order_id, dry_run=dry_run,
                 )
         except Exception:

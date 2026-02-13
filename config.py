@@ -94,4 +94,4 @@ WORKER_URL = "https://kalshi-weather-data.wes-432.workers.dev"
 MAX_AGENT_TURNS = 10
 
 # Claude model for the agentic loop
-CLAUDE_MODEL = "claude-haiku-4-5-20251001"
+CLAUDE_MODEL = "claude-sonnet-4-5-20250929"
