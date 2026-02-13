@@ -56,15 +56,13 @@ _TICKER_RE = re.compile(r"^[A-Z0-9][A-Z0-9\-\.]{2,60}$")
 # Data fetching from Cloudflare Worker
 # ---------------------------------------------------------------------------
 
-def fetch_bundle(target_date, cities):
-    """Fetch pre-bundled NWS + Kalshi data from the Cloudflare Worker."""
-    params = {"date": target_date}
-    if cities:
-        params["cities"] = ",".join(cities)
+def _fetch_worker(target_date, city_codes):
+    """Single Worker call for a batch of cities."""
+    params = {"date": target_date, "cities": ",".join(city_codes)}
     url = f"{WORKER_URL}/bundle"
     for attempt in range(2):
         try:
-            r = requests.get(url, params=params, timeout=30)
+            r = requests.get(url, params=params, timeout=45)
             r.raise_for_status()
             return r.json()
         except Exception as e:
@@ -73,6 +71,20 @@ def fetch_bundle(target_date, cities):
                 time.sleep(2)
             else:
                 raise
+
+
+def fetch_bundle(target_date, cities):
+    """Fetch data from Worker in batches of 3 (avoids Cloudflare 50-subrequest limit)."""
+    BATCH_SIZE = 3
+    merged = {"generated_at": None, "target_date": target_date, "cities": {}, "errors": []}
+    for i in range(0, len(cities), BATCH_SIZE):
+        batch = cities[i:i + BATCH_SIZE]
+        print(f"  [FETCH] Batch {i // BATCH_SIZE + 1}: {', '.join(batch)}")
+        result = _fetch_worker(target_date, batch)
+        merged["generated_at"] = result.get("generated_at")
+        merged["cities"].update(result.get("cities", {}))
+        merged["errors"].extend(result.get("errors", []))
+    return merged
 
 
 def format_bundle_for_claude(bundle):
@@ -112,9 +124,9 @@ def format_bundle_for_claude(bundle):
                 continue
             lines.append(f"\n{label} MARKETS ({series}):")
             for c in contracts:
-                ob = c.get("orderbook", {})
-                yes_bids = ob.get("yes", []) if ob else []
-                no_bids = ob.get("no", []) if ob else []
+                ob = c.get("orderbook") or {}
+                yes_bids = ob.get("yes") or []
+                no_bids = ob.get("no") or []
                 ob_str = f"book: YES {yes_bids[:3]} NO {no_bids[:3]}" if ob else "no orderbook"
                 lines.append(
                     f"  {c['ticker']} \"{c.get('yes_sub_title', c.get('title',''))}\" | "

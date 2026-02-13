@@ -1,5 +1,6 @@
 // Kalshi Weather Data Worker
 // Fetches NWS forecasts + Kalshi market data, returns bundled JSON
+// Uses authenticated Kalshi API requests (RSA-PSS signing)
 
 const CITY_CONFIGS = {
   CHI: { name: "Chicago Midway", station: "KMDW", lat: 41.786, lon: -87.752, high: "KXHIGHCHI", low: "KXLOWTCHI", tz: "America/Chicago" },
@@ -16,7 +17,6 @@ const KALSHI_BASE = "https://api.elections.kalshi.com/trade-api/v2";
 
 function cToF(c) { return c * 9 / 5 + 32; }
 
-// Format date as Kalshi ticker code: YYMMMDD (e.g., 26FEB13)
 function toTickerDate(dateStr) {
   const d = new Date(dateStr + "T12:00:00Z");
   const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
@@ -26,11 +26,104 @@ function toTickerDate(dateStr) {
   return yy + mmm + dd;
 }
 
-async function safeFetch(url, headers = {}) {
-  const resp = await fetch(url, { headers });
-  if (!resp.ok) throw new Error(`HTTP ${resp.status} from ${url}`);
-  return resp.json();
+// ---------------------------------------------------------------------------
+// Kalshi RSA-PSS Auth
+// ---------------------------------------------------------------------------
+
+function pemToArrayBuffer(pem) {
+  // Strip PEM headers and decode base64
+  const b64 = pem
+    .replace(/-----BEGIN RSA PRIVATE KEY-----/g, "")
+    .replace(/-----END RSA PRIVATE KEY-----/g, "")
+    .replace(/-----BEGIN PRIVATE KEY-----/g, "")
+    .replace(/-----END PRIVATE KEY-----/g, "")
+    .replace(/\s/g, "");
+  const binary = atob(b64);
+  const buf = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) buf[i] = binary.charCodeAt(i);
+  return buf.buffer;
 }
+
+let _cachedKey = null;
+
+async function getSigningKey(env) {
+  if (_cachedKey) return _cachedKey;
+  const pem = env.KALSHI_PRIVATE_KEY;
+  if (!pem) throw new Error("KALSHI_PRIVATE_KEY secret not set");
+  const keyData = pemToArrayBuffer(pem);
+
+  // Try PKCS#8 first, fall back to PKCS#1
+  try {
+    _cachedKey = await crypto.subtle.importKey(
+      "pkcs8", keyData,
+      { name: "RSA-PSS", hash: "SHA-256" },
+      false, ["sign"]
+    );
+  } catch (_) {
+    // PKCS#1 keys need wrapping in PKCS#8 envelope or use a different approach
+    // Cloudflare Workers only support PKCS#8, so we'll try as-is
+    throw new Error("Key import failed. Key must be in PKCS#8 format (BEGIN PRIVATE KEY). Convert with: openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt -in key.pem -out key-pkcs8.pem");
+  }
+  return _cachedKey;
+}
+
+async function makeKalshiHeaders(env, method, path) {
+  const key = await getSigningKey(env);
+  const apiKeyId = env.KALSHI_API_KEY_ID;
+  if (!apiKeyId) throw new Error("KALSHI_API_KEY_ID secret not set");
+
+  const ts = String(Date.now());
+  const pathNoQuery = path.split("?")[0];
+  const message = new TextEncoder().encode(`${ts}${method}${pathNoQuery}`);
+
+  const signature = await crypto.subtle.sign(
+    { name: "RSA-PSS", saltLength: 32 },
+    key, message
+  );
+
+  const sigB64 = btoa(String.fromCharCode(...new Uint8Array(signature)));
+
+  return {
+    "KALSHI-ACCESS-KEY": apiKeyId,
+    "KALSHI-ACCESS-SIGNATURE": sigB64,
+    "KALSHI-ACCESS-TIMESTAMP": ts,
+    "Content-Type": "application/json",
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Fetch helpers
+// ---------------------------------------------------------------------------
+
+async function safeFetch(url, headers = {}) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const resp = await fetch(url, { headers });
+    if (resp.ok) return resp.json();
+    if (resp.status === 429 && attempt < 2) {
+      await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
+      continue;
+    }
+    throw new Error(`HTTP ${resp.status} from ${url}`);
+  }
+}
+
+async function kalshiFetch(env, path) {
+  const url = `${KALSHI_BASE}${path}`;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const headers = await makeKalshiHeaders(env, "GET", `/trade-api/v2${path}`);
+    const resp = await fetch(url, { headers });
+    if (resp.ok) return resp.json();
+    if (resp.status === 429 && attempt < 2) {
+      await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
+      continue;
+    }
+    throw new Error(`HTTP ${resp.status} from ${url}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Data fetchers
+// ---------------------------------------------------------------------------
 
 async function fetchWeather(config, targetDate) {
   try {
@@ -60,7 +153,6 @@ async function fetchWeather(config, targetDate) {
       desc: p.shortForecast,
     }));
 
-    // Current conditions (optional)
     let currentTemp = null, currentDesc = null, observedAt = null;
     try {
       const obsData = await safeFetch(
@@ -91,11 +183,10 @@ async function fetchWeather(config, targetDate) {
   }
 }
 
-async function fetchMarkets(seriesTicker, targetDate) {
+async function fetchMarkets(env, seriesTicker, targetDate) {
   try {
     const tickerDate = toTickerDate(targetDate);
-    const url = `${KALSHI_BASE}/events?status=open&series_ticker=${seriesTicker}&with_nested_markets=true&limit=50`;
-    const data = await safeFetch(url);
+    const data = await kalshiFetch(env, `/events?status=open&series_ticker=${seriesTicker}&with_nested_markets=true&limit=50`);
 
     const contracts = [];
     for (const event of (data.events || [])) {
@@ -121,7 +212,7 @@ async function fetchMarkets(seriesTicker, targetDate) {
       const batch = contracts.slice(i, i + 5);
       const results = await Promise.allSettled(
         batch.map(c =>
-          safeFetch(`${KALSHI_BASE}/markets/${c.ticker}/orderbook`)
+          kalshiFetch(env, `/markets/${c.ticker}/orderbook`)
             .then(d => ({ ticker: c.ticker, ob: d.orderbook || d }))
             .catch(e => ({ ticker: c.ticker, ob: { yes: [], no: [], error: e.message } }))
         )
@@ -140,11 +231,11 @@ async function fetchMarkets(seriesTicker, targetDate) {
   }
 }
 
-async function fetchCityBundle(code, config, targetDate) {
+async function fetchCityBundle(env, _code, config, targetDate) {
   const [weather, high, low] = await Promise.all([
     fetchWeather(config, targetDate),
-    fetchMarkets(config.high, targetDate),
-    fetchMarkets(config.low, targetDate),
+    fetchMarkets(env, config.high, targetDate),
+    fetchMarkets(env, config.low, targetDate),
   ]);
   return {
     city_name: config.name, station: config.station,
@@ -156,13 +247,18 @@ async function fetchCityBundle(code, config, targetDate) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Request handler
+// ---------------------------------------------------------------------------
+
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     const url = new URL(request.url);
     const headers = { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" };
 
     if (url.pathname === "/health") {
-      return new Response(JSON.stringify({ status: "ok", cities: Object.keys(CITY_CONFIGS) }), { headers });
+      const hasAuth = !!(env.KALSHI_API_KEY_ID && env.KALSHI_PRIVATE_KEY);
+      return new Response(JSON.stringify({ status: "ok", authenticated: hasAuth, cities: Object.keys(CITY_CONFIGS) }), { headers });
     }
 
     if (url.pathname === "/bundle") {
@@ -182,9 +278,16 @@ export default {
         codes = Object.keys(CITY_CONFIGS);
       }
 
-      const results = await Promise.allSettled(
-        codes.map(c => fetchCityBundle(c, CITY_CONFIGS[c], targetDate))
-      );
+      // Fetch cities sequentially to avoid Kalshi rate limits
+      const results = [];
+      for (const c of codes) {
+        try {
+          const bundle = await fetchCityBundle(env, c, CITY_CONFIGS[c], targetDate);
+          results.push({ status: "fulfilled", value: bundle });
+        } catch (e) {
+          results.push({ status: "rejected", reason: e });
+        }
+      }
 
       const cities = {};
       const errors = [];
