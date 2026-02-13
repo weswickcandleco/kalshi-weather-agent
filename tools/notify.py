@@ -40,13 +40,14 @@ def send_discord(content):
         return False
 
 
-def notify_bets_placed(trades, mode, target_date):
+def notify_bets_placed(trades, mode, target_date, token_stats=None):
     """Notify Discord about bets placed during an agent run.
 
     Args:
         trades: list of trade dicts from get_trade_history()
         mode: "LIVE", "DEMO", or "DRY RUN"
         target_date: ISO date string
+        token_stats: optional dict with input_tokens, output_tokens, cost_estimate
     """
     if not trades:
         return
@@ -70,6 +71,11 @@ def notify_bets_placed(trades, mode, target_date):
         lines.append(f"{city} `{ticker}` -- {side} @ {t['yes_price_cents']}c -- cost ${cost:.2f} / win ${profit:.2f}")
 
     lines.append("")
+    if token_stats:
+        tok_in = token_stats.get("input_tokens", 0)
+        tok_out = token_stats.get("output_tokens", 0)
+        api_cost = token_stats.get("cost_estimate", 0)
+        lines.append(f"API: {tok_in:,} in / {tok_out:,} out | ~${api_cost:.4f}")
     lines.append(f"Mode: {mode} | {now.strftime('%I:%M %p CT')}")
 
     send_discord("\n".join(lines))

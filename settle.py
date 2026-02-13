@@ -121,8 +121,16 @@ def parse_ticker(ticker):
     }
 
 
-def evaluate_bet(parsed_ticker, side, observed_high, observed_low):
+def evaluate_bet(parsed_ticker, side, observed_high, observed_low, title=""):
     """Determine if a bet won or lost based on observed temps.
+
+    Args:
+        parsed_ticker: dict from parse_ticker()
+        side: 'yes' or 'no'
+        observed_high: observed high temp (F)
+        observed_low: observed low temp (F)
+        title: yes_sub_title from Kalshi (e.g. "56° or above", "47° or below")
+            Used to determine threshold direction for T contracts.
 
     Returns: 'win' or 'loss'
     """
@@ -147,12 +155,12 @@ def evaluate_bet(parsed_ticker, side, observed_high, observed_low):
         high_bound = low_bound + 1
         condition_true = low_bound <= observed_int <= high_bound
     else:  # T = Threshold
-        if temp_type == "HIGH":
-            # For high temp: T38 means ">38" (strict greater than)
-            condition_true = observed_int > int(value)
+        # Direction determined by title (yes_sub_title from Kalshi)
+        # "X° or below" → YES wins if observed < threshold
+        # "X° or above" → YES wins if observed > threshold (default)
+        if "below" in title.lower():
+            condition_true = observed_int < int(value)
         else:
-            # For low temp: T27 means ">27" (strict greater than, per Kalshi)
-            # Note: Kalshi LOW temp thresholds use ">" not "<"
             condition_true = observed_int > int(value)
 
     # Apply side
@@ -209,7 +217,7 @@ def settle_date(target_date):
         obs_high, obs_low = observed[city]
         obs_temp = obs_high if parsed["temp_type"] == "HIGH" else obs_low
 
-        result = evaluate_bet(parsed, t["side"], obs_high, obs_low)
+        result = evaluate_bet(parsed, t["side"], obs_high, obs_low, title=t.get("title", ""))
         payout = 100 * t["contracts"] if result == "win" else 0
         net_cents = payout - t["cost_cents"]
 
