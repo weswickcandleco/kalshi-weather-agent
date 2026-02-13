@@ -50,6 +50,7 @@ jobs:
           KALSHI_DEMO_API_KEY_ID=${KALSHI_DEMO_API_KEY_ID}
           KALSHI_DEMO_PRIVATE_KEY_PATH=./kalshi-private-key.pem
           DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
+          WORKER_URL=https://kalshi-weather-data.wes-432.workers.dev
           EOF
 
       - name: Run agent (live)

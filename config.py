@@ -87,8 +87,11 @@ MAX_CONTRACTS_PER_ORDER = 5
 MIN_EDGE_CENTS = 5
 MAX_RUN_DOLLARS = 8.00  # max total spend per agent run (keeps $2 reserve on a $10 account)
 
+# Cloudflare Worker (pre-fetches NWS + Kalshi data, returns bundled JSON)
+WORKER_URL = "https://kalshi-weather-data.wes-432.workers.dev"
+
 # Agent limits
-MAX_AGENT_TURNS = 30
+MAX_AGENT_TURNS = 3
 
 # Claude model for the agentic loop
 CLAUDE_MODEL = "claude-haiku-4-5-20251001"
