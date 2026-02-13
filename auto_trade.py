@@ -231,6 +231,8 @@ def find_bets(bundle, target_date):
                     "model_prob": round(prob, 3),
                     "city": code,
                     "title": yes_sub,
+                    "forecast_high_f": forecast_high,
+                    "forecast_low_f": forecast_low,
                 })
 
     # Sort by EV descending (best bets first)
@@ -304,6 +306,8 @@ def execute_bets(bets, pk, api_key_id, base_url, dry_run, mode, target_date):
             mode=mode, target_date=target_date, city=bet["city"],
             ticker=bet["ticker"], title=bet["title"], side=bet["side"],
             yes_price_cents=bet["yes_price_cents"], contracts=bet["contracts"],
+            forecast_high_f=bet.get("forecast_high_f"),
+            forecast_low_f=bet.get("forecast_low_f"),
             est_probability=bet["model_prob"],
             expected_value_cents=bet["ev_cents"],
             filled=filled, order_id=order_id, dry_run=dry_run,

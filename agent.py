@@ -139,18 +139,22 @@ def _contract_prob(ticker, forecast_high, forecast_low, yes_sub_title=""):
 _current_season = "winter"
 # Ticker → yes_sub_title mapping (populated by compute_contract_probabilities)
 _ticker_titles = {}
+# City → (forecast_high, forecast_low) mapping
+_city_forecasts = {}
 
 
 def compute_contract_probabilities(bundle, target_date):
     """Attach model_prob, ev_yes, ev_no to each contract in the bundle."""
-    global _current_season, _ticker_titles
+    global _current_season, _ticker_titles, _city_forecasts
     _current_season = _get_season(target_date)
     _ticker_titles = {}
+    _city_forecasts = {}
 
     for code, city in bundle.get("cities", {}).items():
         w = city.get("weather", {})
         forecast_high = w.get("predicted_high_f")
         forecast_low = w.get("predicted_low_f")
+        _city_forecasts[code] = (forecast_high, forecast_low)
 
         for mtype in ("high", "low"):
             mdata = city.get("markets", {}).get(mtype, {})
@@ -420,10 +424,12 @@ def dispatch_tool(name, inp, pk, api_key_id, base_url, dry_run, mode="", target_
                     cost_c = ypc if side == "yes" else 100 - ypc
                     ev = est_prob * (100 - cost_c) - (1 - est_prob) * cost_c
                 trade_title = _ticker_titles.get(ticker, "")
+                fc = _city_forecasts.get(city, (None, None))
                 log_trade(
                     mode=mode, target_date=target_date, city=city,
                     ticker=ticker, title=trade_title, side=side,
                     yes_price_cents=ypc, contracts=count,
+                    forecast_high_f=fc[0], forecast_low_f=fc[1],
                     est_probability=est_prob, expected_value_cents=ev,
                     filled=filled, order_id=order_id, dry_run=dry_run,
                 )

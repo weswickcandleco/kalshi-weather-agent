@@ -37,6 +37,12 @@ def _get_db():
             payout_cents INTEGER DEFAULT 0
         )
     """)
+    # Add observed temp columns if they don't exist (for calibration)
+    for col in ("observed_high_f", "observed_low_f"):
+        try:
+            db.execute(f"ALTER TABLE trades ADD COLUMN {col} REAL")
+        except sqlite3.OperationalError:
+            pass  # column already exists
     db.execute("""
         CREATE TABLE IF NOT EXISTS runs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -160,13 +166,15 @@ def get_pnl_summary(mode=None):
     return result
 
 
-def update_settlement(ticker, target_date, result, payout_cents=0):
+def update_settlement(ticker, target_date, result, payout_cents=0,
+                      observed_high_f=None, observed_low_f=None):
     """Update settlement result for trades on a given ticker and date."""
     db = _get_db()
     db.execute(
-        """UPDATE trades SET settlement_result = ?, payout_cents = ?
+        """UPDATE trades SET settlement_result = ?, payout_cents = ?,
+           observed_high_f = ?, observed_low_f = ?
            WHERE ticker = ? AND target_date = ? AND settlement_result = 'pending'""",
-        (result, payout_cents, ticker, target_date),
+        (result, payout_cents, observed_high_f, observed_low_f, ticker, target_date),
     )
     db.commit()
     db.close()

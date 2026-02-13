@@ -221,8 +221,9 @@ def settle_date(target_date):
         payout = 100 * t["contracts"] if result == "win" else 0
         net_cents = payout - t["cost_cents"]
 
-        # Update database
-        update_settlement(t["ticker"], target_date, result, payout)
+        # Update database (include observed temps for calibration)
+        update_settlement(t["ticker"], target_date, result, payout,
+                          observed_high_f=obs_high, observed_low_f=obs_low)
 
         print(f"  {result.upper()}: {t['ticker']} | observed={obs_temp:.1f}F | "
               f"payout=${payout/100:.2f} | net=${net_cents/100:.2f}")
