@@ -42,7 +42,7 @@ from config import (
 from tools.kalshi_auth import load_private_key
 from tools.kalshi_trading import tool_get_account_balance, tool_place_order
 from tools.trade_log import log_trade, log_run, get_trade_history, get_existing_tickers, get_city_bet_count, export_dashboard_data
-from tools.notify import notify_bets_placed, notify_error
+from tools.notify import notify_bets_placed, notify_bet_logic, notify_error
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -624,6 +624,7 @@ def main():
             if run_trades:
                 notify_bets_placed(run_trades, mode, target_date,
                                    token_stats={"input_tokens": 0, "output_tokens": 0, "cost_estimate": 0.0})
+                notify_bet_logic(run_trades, target_date)
         except Exception as e:
             print(f"[NOTIFY] Failed: {e}")
 

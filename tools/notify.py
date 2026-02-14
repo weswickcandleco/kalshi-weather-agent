@@ -81,6 +81,122 @@ def notify_bets_placed(trades, mode, target_date, token_stats=None):
     send_discord("\n".join(lines))
 
 
+def notify_bet_logic(trades, target_date):
+    """Send detailed bet logic breakdown with probability calculations.
+
+    Args:
+        trades: list of trade dicts with ensemble data
+        target_date: ISO date string
+    """
+    if not trades:
+        return
+
+    url = _get_webhook_url()
+    if not url:
+        return
+
+    fields = []
+    for i, t in enumerate(trades, 1):
+        city = t.get("city", "?")
+        ticker = t["ticker"]
+        side = t["side"].upper()
+        cost = t["cost_cents"] / 100
+        contracts = t["contracts"]
+        yes_price = t["yes_price_cents"]
+        ev = t.get("expected_value_cents", 0)
+
+        # Get ensemble stats
+        ens_count = t.get("ensemble_member_count", 0)
+        model_prob = t.get("est_probability", 0)
+
+        # Determine high/low and mean/sd
+        is_low = "LOWT" in ticker
+        if is_low:
+            ens_mean = t.get("ensemble_mean_low")
+            ens_sd = t.get("ensemble_sd_low")
+            temp_type = "Low"
+        else:
+            ens_mean = t.get("ensemble_mean_high")
+            ens_sd = t.get("ensemble_sd_high")
+            temp_type = "High"
+
+        # Format ensemble stats
+        ens_str = f"{ens_count} forecasts" if ens_count else "N/A"
+        mean_str = f"{ens_mean:.1f}°F" if ens_mean else "?"
+        sd_str = f"{ens_sd:.1f}°F" if ens_sd else "?"
+
+        # Extract threshold from ticker
+        import re
+        match = re.search(r'[BT]([\d.]+)', ticker)
+        threshold = match.group(1) if match else "?"
+
+        # Determine what we're betting
+        bracket_type = "B" if "B" in ticker.split("-")[-1][0] else "T"
+        if side == "YES":
+            if bracket_type == "T":
+                bet_desc = f"{temp_type} ≥{threshold}°F (YES)"
+            else:
+                bet_desc = f"{temp_type} <{threshold}°F (YES)"
+        else:
+            if bracket_type == "T":
+                bet_desc = f"{temp_type} <{threshold}°F (NO)"
+            else:
+                bet_desc = f"{temp_type} ≥{threshold}°F (NO)"
+
+        # Build field value
+        prob_pct = int(model_prob * 100) if model_prob else 0
+        market_prob = yes_price if side == "YES" else (100 - yes_price)
+
+        value_lines = [
+            "```",
+            f"Ensemble: {ens_str}",
+            f"Mean: {mean_str} | SD: {sd_str}",
+            "",
+            f"P(win) = {prob_pct}%",
+            f"Market price: {yes_price}¢ (implies {market_prob}%)",
+            "",
+            f"Edge: {prob_pct}% - {market_prob}% = +{ev:.0f}¢",
+        ]
+
+        # Add insight
+        if ev >= 30:
+            value_lines.append("→ Strong mispricing")
+        elif ev >= 15:
+            value_lines.append("→ Moderate edge")
+        else:
+            value_lines.append("→ Small edge, above threshold")
+
+        value_lines.append("```")
+
+        fields.append({
+            "name": f"{i}️⃣ {city} - {bet_desc} | ${cost:.2f} @ {yes_price}¢ | +{ev:.0f}¢ EV",
+            "value": "\n".join(value_lines)
+        })
+
+    # Add model details footer
+    fields.append({
+        "name": "📊 Model Details",
+        "value": "Uses **normal distribution** with ensemble mean/SD to calculate P(condition true)\n\nBets when: `P(model) - P(market) > 5¢`"
+    })
+
+    embed = {
+        "title": f"🎯 Bet Logic Breakdown - {target_date}",
+        "description": f"Why these {len(trades)} bet{'s' if len(trades) != 1 else ''} were placed",
+        "color": 3066993,  # green
+        "fields": fields,
+        "footer": {
+            "text": "Cloudflare cron → GitHub Actions → Kalshi API"
+        }
+    }
+
+    try:
+        r = requests.post(url, json={"embeds": [embed]}, timeout=10)
+        if r.status_code not in (200, 204):
+            print(f"[NOTIFY] Bet logic Discord returned HTTP {r.status_code}")
+    except Exception as e:
+        print(f"[NOTIFY] Bet logic webhook failed: {e}")
+
+
 def notify_settlements(results, target_date):
     """Notify Discord about settlement results.
 
