@@ -1,10 +1,7 @@
 name: Evening Auto-Trade (Lows)
 
 on:
-  schedule:
-    # 8:00 PM CT = 02:00 UTC (CST is UTC-6)
-    - cron: '0 2 * * *'
-  workflow_dispatch: # Allow manual trigger
+  workflow_dispatch: # Triggered by Cloudflare Worker cron at 8:12 PM CT
 
 permissions:
   contents: write
