@@ -1,0 +1,9 @@
+name = "kalshi-trigger"
+main = "src/index.js"
+compatibility_date = "2024-09-23"
+
+[triggers]
+crons = [
+  "12 2 * * *",   # 8:12 PM CT = 2:12 AM UTC (evening lows)
+  "30 15 * * *"   # 9:30 AM CT = 3:30 PM UTC (morning highs)
+]
