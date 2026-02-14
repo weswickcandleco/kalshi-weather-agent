@@ -5,3 +5,4 @@ __pycache__/
 .venv/
 logs/
 trades.db.pre-ensemble
+trades.db.clean-*
