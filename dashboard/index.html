@@ -3,487 +3,1044 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Kalshi Weather Agent -- Live Dashboard</title>
+<title>Kalshi Weather Agent</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
   :root {
-    --bg: #0f1117; --surface: #1a1d27; --border: #2a2d37;
-    --text: #e2e8f0; --muted: #94a3b8; --green: #4ade80; --red: #f87171;
-    --yellow: #fbbf24; --blue: #60a5fa; --purple: #a78bfa;
+    --bg: #0a0e14; --surface: #1a1f2e; --surface-light: #242938; --border: #2d3448;
+    --text: #e6edf3; --text-muted: #8b949e; --text-dim: #6e7681;
+    --primary: #58a6ff; --primary-dark: #388bfd; --primary-light: #79c0ff;
+    --green: #3fb950; --green-dark: #238636; --green-light: #56d364;
+    --red: #f85149; --red-dark: #da3633; --red-light: #ff7b72;
+    --yellow: #d29922; --yellow-dark: #9e6a03; --yellow-light: #e3b341;
+    --purple: #a371f7; --purple-dark: #8957e5; --purple-light: #b392f0;
+    --shadow: 0 1px 3px rgba(0,0,0,0.5);
+    --shadow-lg: 0 8px 24px rgba(0,0,0,0.6);
   }
+
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 20px; max-width: 1400px; margin: 0 auto; }
-  h1 { font-size: 24px; margin-bottom: 4px; }
-  h2 { font-size: 18px; margin: 28px 0 12px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
-  h3 { font-size: 15px; margin: 16px 0 8px; color: var(--muted); }
-  .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 4px; }
-  .updated { color: var(--muted); font-size: 12px; margin-bottom: 20px; }
-  .updated .live { color: var(--green); font-weight: 600; }
 
-  /* Cards */
-  .cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
-  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 18px; min-width: 160px; flex: 1; }
-  .card-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
-  .card-value { font-size: 28px; font-weight: 700; }
-  .card-detail { font-size: 11px; color: var(--muted); margin-top: 4px; }
-  .green { color: var(--green); }
-  .red { color: var(--red); }
-  .yellow { color: var(--yellow); }
-  .blue { color: var(--blue); }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+    padding: 0;
+    margin: 0;
+  }
 
-  /* Tables */
-  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 16px; }
-  th { text-align: left; padding: 8px 10px; background: var(--surface); color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid var(--border); position: sticky; top: 0; }
-  td { padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
-  tr:hover { background: #1e2130; }
-  .mono { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; }
-  .right { text-align: right; }
-  .nowrap { white-space: nowrap; }
+  /* Header */
+  .header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 20px 32px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    backdrop-filter: blur(8px);
+    box-shadow: var(--shadow);
+  }
 
-  /* Badges */
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
-  .badge-win { background: #16a34a33; color: var(--green); }
-  .badge-loss { background: #dc262633; color: var(--red); }
-  .badge-pending { background: #eab30833; color: var(--yellow); }
-  .badge-nofill { background: #64748b33; color: var(--muted); }
-  .badge-ensemble { background: #7c3aed22; color: var(--purple); }
-  .badge-sd { background: #1e40af22; color: var(--blue); }
-  .badge-dry { background: #64748b33; color: var(--muted); }
+  .header-content {
+    max-width: 1400px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
 
-  /* Weather grid */
-  .weather-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; margin-bottom: 16px; }
-  .weather-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
-  .weather-city { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
-  .weather-temp { font-size: 24px; font-weight: 700; }
-  .weather-row { display: flex; justify-content: space-between; margin-top: 4px; font-size: 12px; color: var(--muted); }
+  h1 {
+    font-size: 24px;
+    font-weight: 600;
+    color: var(--text);
+    margin: 0;
+  }
 
-  /* Loading */
-  .loading { text-align: center; padding: 40px; color: var(--muted); }
-  .spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 8px; vertical-align: middle; }
-  @keyframes spin { to { transform: rotate(360deg); } }
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    background: var(--surface-light);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  /* Container */
+  .container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 32px;
+  }
+
+  /* Hero Cards */
+  .hero-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+
+  .hero-card {
+    background: linear-gradient(135deg, var(--surface) 0%, var(--surface-light) 100%);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: var(--shadow);
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+
+  .hero-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .hero-card-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  .hero-card-value {
+    font-size: 36px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    line-height: 1;
+  }
+
+  .hero-card-detail {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-top: 8px;
+  }
+
+  .trend-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 14px;
+    font-weight: 600;
+    margin-left: 8px;
+  }
+
+  .trend-up { color: var(--green); }
+  .trend-down { color: var(--red); }
+
+  /* Model Explanation */
+  .model-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 32px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+  }
+
+  .model-header {
+    padding: 20px 24px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    user-select: none;
+    background: var(--surface-light);
+  }
+
+  .model-header:hover {
+    background: var(--surface);
+  }
+
+  .model-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .model-subtitle {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+
+  .expand-icon {
+    font-size: 20px;
+    color: var(--text-muted);
+    transition: transform 0.2s;
+  }
+
+  .model-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+  }
+
+  .model-content.expanded {
+    max-height: 2000px;
+  }
+
+  .model-content-inner {
+    padding: 24px;
+  }
+
+  .model-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-bottom: 24px;
+  }
+
+  .model-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+  }
+
+  .model-card h3 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--primary);
+    margin-bottom: 12px;
+  }
+
+  .model-card ul {
+    list-style: none;
+    padding: 0;
+  }
+
+  .model-card li {
+    padding: 6px 0;
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  .model-card li::before {
+    content: "▹";
+    color: var(--primary);
+    font-weight: bold;
+    display: inline-block;
+    width: 16px;
+  }
+
+  /* Charts Section */
+  .charts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+    gap: 24px;
+    margin-bottom: 32px;
+  }
+
+  .chart-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: var(--shadow);
+  }
+
+  .chart-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 16px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .chart-container {
+    position: relative;
+    height: 280px;
+  }
+
+  .chart-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 280px;
+    color: var(--text-dim);
+    text-align: center;
+  }
+
+  .chart-empty-icon {
+    font-size: 48px;
+    margin-bottom: 12px;
+    opacity: 0.3;
+  }
+
+  .chart-empty-text {
+    font-size: 14px;
+  }
 
   /* Tabs */
-  .tabs { display: flex; gap: 0; margin-bottom: 16px; border-bottom: 2px solid var(--border); }
-  .tab { padding: 8px 16px; cursor: pointer; color: var(--muted); font-size: 13px; font-weight: 600; border-bottom: 2px solid transparent; margin-bottom: -2px; }
-  .tab.active { color: var(--blue); border-bottom-color: var(--blue); }
-  .tab:hover { color: var(--text); }
-  .tab-content { display: none; }
-  .tab-content.active { display: block; }
+  .tabs {
+    display: flex;
+    gap: 8px;
+    border-bottom: 2px solid var(--border);
+    margin-bottom: 24px;
+  }
 
-  /* Date filter */
-  .filters { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
-  .filter-btn { padding: 4px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); font-size: 12px; cursor: pointer; }
-  .filter-btn.active { background: var(--blue); color: #fff; border-color: var(--blue); }
-  .filter-btn:hover { border-color: var(--blue); }
+  .tab {
+    padding: 12px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: color 0.2s, border-color 0.2s;
+    user-select: none;
+  }
+
+  .tab:hover {
+    color: var(--text);
+  }
+
+  .tab.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+  }
+
+  .tab-content {
+    display: none;
+  }
+
+  .tab-content.active {
+    display: block;
+  }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    background: var(--surface);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  th {
+    text-align: left;
+    padding: 12px 16px;
+    background: var(--surface-light);
+    color: var(--text-dim);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+    border-bottom: 1px solid var(--border);
+  }
+
+  td {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+  }
+
+  tr:last-child td {
+    border-bottom: none;
+  }
+
+  tr:hover {
+    background: var(--surface-light);
+  }
+
+  .mono {
+    font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+    font-size: 12px;
+  }
+
+  .right {
+    text-align: right;
+  }
+
+  /* Badges */
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+  }
+
+  .badge-win {
+    background: rgba(63, 185, 80, 0.15);
+    color: var(--green-light);
+  }
+
+  .badge-loss {
+    background: rgba(248, 81, 73, 0.15);
+    color: var(--red-light);
+  }
+
+  .badge-pending {
+    background: rgba(210, 153, 34, 0.15);
+    color: var(--yellow-light);
+  }
+
+  .badge-ensemble {
+    background: rgba(163, 113, 247, 0.15);
+    color: var(--purple-light);
+  }
+
+  .badge-sd {
+    background: rgba(88, 166, 255, 0.15);
+    color: var(--primary-light);
+  }
+
+  /* Utilities */
+  .green { color: var(--green-light); }
+  .red { color: var(--red-light); }
+  .yellow { color: var(--yellow-light); }
+  .purple { color: var(--purple-light); }
+  .blue { color: var(--primary-light); }
+  .muted { color: var(--text-muted); }
+
+  .nowrap { white-space: nowrap; }
+
+  .loading {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-muted);
+  }
+
+  .spinner {
+    display: inline-block;
+    width: 24px;
+    height: 24px;
+    border: 3px solid var(--border);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-right: 8px;
+    vertical-align: middle;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .container {
+      padding: 20px;
+    }
+
+    .hero-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .model-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .charts-grid {
+      grid-template-columns: 1fr;
+    }
+  }
 </style>
 </head>
 <body>
 
-<h1>Kalshi Weather Agent</h1>
-<p class="subtitle">Autonomous weather prediction market bot -- live dashboard</p>
-<p class="updated" id="updated">Loading...</p>
-
-<!-- P&L Summary -->
-<div class="cards" id="pnl-cards">
-  <div class="card"><div class="card-label">Loading...</div><div class="card-value">--</div></div>
+<!-- Header -->
+<div class="header">
+  <div class="header-content">
+    <div>
+      <h1>Kalshi Weather Agent</h1>
+    </div>
+    <div class="status-badge">
+      <span class="status-dot"></span>
+      <span id="status-text">Live</span>
+    </div>
+  </div>
 </div>
 
-<!-- Tabs -->
-<div class="tabs">
-  <div class="tab active" data-tab="trades">All Trades</div>
-  <div class="tab" data-tab="weather">Live Weather</div>
-  <div class="tab" data-tab="runs">Run History</div>
-  <div class="tab" data-tab="calibration">Calibration</div>
-</div>
+<div class="container">
+  <!-- Hero Cards -->
+  <div class="hero-grid">
+    <div class="hero-card">
+      <div class="hero-card-label">Total P&L</div>
+      <div class="hero-card-value" id="pnl-value">$0.00</div>
+      <div class="hero-card-detail" id="pnl-detail">No trades yet</div>
+    </div>
 
-<!-- Tab: All Trades -->
-<div class="tab-content active" id="tab-trades">
-  <div class="filters" id="date-filters"></div>
-  <table>
-    <thead>
-      <tr>
-        <th>Date</th>
-        <th>City</th>
-        <th>Ticker</th>
-        <th>Side</th>
-        <th class="right">Cost</th>
-        <th class="right">Prob</th>
-        <th>Source</th>
-        <th>Forecast</th>
-        <th>Observed</th>
-        <th>Ensemble</th>
-        <th class="right">EV</th>
-        <th>Result</th>
-        <th class="right">P&L</th>
-      </tr>
-    </thead>
-    <tbody id="trades-body"></tbody>
-  </table>
-</div>
+    <div class="hero-card">
+      <div class="hero-card-label">Win Rate</div>
+      <div class="hero-card-value" id="winrate-value">—</div>
+      <div class="hero-card-detail" id="winrate-detail">0W - 0L - 0 pending</div>
+    </div>
 
-<!-- Tab: Live Weather -->
-<div class="tab-content" id="tab-weather">
-  <p class="subtitle" style="margin-bottom:12px">Live observations + forecasts from NWS + Open-Meteo ensemble (122 members)</p>
-  <div id="weather-loading" class="loading"><span class="spinner"></span> Fetching live weather data...</div>
-  <div class="weather-grid" id="weather-grid"></div>
-</div>
+    <div class="hero-card">
+      <div class="hero-card-label">Active Positions</div>
+      <div class="hero-card-value" id="active-value">0</div>
+      <div class="hero-card-detail" id="active-detail">Next settlement: 9:00 AM CT</div>
+    </div>
 
-<!-- Tab: Run History -->
-<div class="tab-content" id="tab-runs">
-  <table>
-    <thead>
-      <tr>
-        <th>Time</th>
-        <th>Mode</th>
-        <th>Target Date</th>
-        <th>Cities</th>
-        <th class="right">Placed</th>
-        <th class="right">Skipped</th>
-        <th class="right">Cost</th>
-      </tr>
-    </thead>
-    <tbody id="runs-body"></tbody>
-  </table>
-</div>
+    <div class="hero-card">
+      <div class="hero-card-label">Return on Investment</div>
+      <div class="hero-card-value" id="roi-value">—</div>
+      <div class="hero-card-detail" id="roi-detail">$0 invested</div>
+    </div>
+  </div>
 
-<!-- Tab: Calibration -->
-<div class="tab-content" id="tab-calibration">
-  <h3>Forecast vs. Observed (settled trades only)</h3>
-  <p class="subtitle" style="margin-bottom:12px">Shows how far off the NWS forecast was from actual observed temps. Helps tune the probability model.</p>
-  <table>
-    <thead>
-      <tr>
-        <th>Date</th>
-        <th>City</th>
-        <th>Type</th>
-        <th class="right">Forecast</th>
-        <th class="right">Observed</th>
-        <th class="right">Error</th>
-        <th>Ensemble Mean</th>
-        <th>Ensemble SD</th>
-      </tr>
-    </thead>
-    <tbody id="calibration-body"></tbody>
-  </table>
+  <!-- Model Explanation (Collapsible) -->
+  <div class="model-section">
+    <div class="model-header" onclick="toggleModel()">
+      <div>
+        <div class="model-title">How the Bot Works</div>
+        <div class="model-subtitle">Ensemble forecasting + split timing strategy</div>
+      </div>
+      <div class="expand-icon" id="expand-icon">▼</div>
+    </div>
+    <div class="model-content" id="model-content">
+      <div class="model-content-inner">
+        <!-- SVG Flowchart -->
+        <svg width="100%" height="240" style="margin-bottom: 24px;">
+          <!-- Models -->
+          <rect x="20" y="20" width="140" height="60" rx="8" fill="var(--surface-light)" stroke="var(--border)" stroke-width="2"/>
+          <text x="90" y="45" text-anchor="middle" fill="var(--text)" font-size="12" font-weight="600">ECMWF IFS</text>
+          <text x="90" y="62" text-anchor="middle" fill="var(--primary)" font-size="16" font-weight="700">51 members</text>
+
+          <rect x="180" y="20" width="140" height="60" rx="8" fill="var(--surface-light)" stroke="var(--border)" stroke-width="2"/>
+          <text x="250" y="45" text-anchor="middle" fill="var(--text)" font-size="12" font-weight="600">GFS</text>
+          <text x="250" y="62" text-anchor="middle" fill="var(--primary)" font-size="16" font-weight="700">31 members</text>
+
+          <rect x="340" y="20" width="140" height="60" rx="8" fill="var(--surface-light)" stroke="var(--border)" stroke-width="2"/>
+          <text x="410" y="45" text-anchor="middle" fill="var(--text)" font-size="12" font-weight="600">ICON</text>
+          <text x="410" y="62" text-anchor="middle" fill="var(--primary)" font-size="16" font-weight="700">40 members</text>
+
+          <!-- Arrow down -->
+          <line x1="250" y1="85" x2="250" y2="105" stroke="var(--border)" stroke-width="3" marker-end="url(#arrowhead)"/>
+          <defs>
+            <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+              <polygon points="0 0, 10 3.5, 0 7" fill="var(--border)"/>
+            </marker>
+          </defs>
+
+          <!-- Ensemble -->
+          <rect x="150" y="110" width="200" height="50" rx="8" fill="var(--purple-dark)" stroke="var(--purple)" stroke-width="2" opacity="0.3"/>
+          <text x="250" y="140" text-anchor="middle" fill="var(--purple-light)" font-size="18" font-weight="700">122 Forecasts</text>
+
+          <!-- Arrow down -->
+          <line x1="250" y1="165" x2="250" y2="185" stroke="var(--border)" stroke-width="3" marker-end="url(#arrowhead)"/>
+
+          <!-- P(YES) -->
+          <rect x="170" y="190" width="160" height="40" rx="8" fill="var(--green-dark)" stroke="var(--green)" stroke-width="2" opacity="0.3"/>
+          <text x="250" y="215" text-anchor="middle" fill="var(--green-light)" font-size="14" font-weight="700">P(YES) Calculation</text>
+        </svg>
+
+        <!-- Details Grid -->
+        <div class="model-grid">
+          <div class="model-card">
+            <h3>Ensemble Model</h3>
+            <ul>
+              <li>122 independent weather forecasts from 3 global models</li>
+              <li>Empirical probability distribution (not just one forecast)</li>
+              <li>Accounts for model uncertainty and forecast spread</li>
+              <li>Fallback to calibrated standard deviation if ensemble unavailable</li>
+            </ul>
+          </div>
+
+          <div class="model-card">
+            <h3>Split Timing Strategy</h3>
+            <ul>
+              <li><strong>8:00 PM CT:</strong> Bet on LOW temps for tomorrow (9hrs before overnight low)</li>
+              <li><strong>9:30 AM CT:</strong> Bet on HIGH temps for today (2-4hrs before afternoon peak)</li>
+              <li>Reduces exposure time and captures freshest forecasts</li>
+              <li>$4 budget per run ($8/day total)</li>
+            </ul>
+          </div>
+
+          <div class="model-card">
+            <h3>Probability Math</h3>
+            <ul>
+              <li>Normal distribution centered on NWS forecast</li>
+              <li>Forecast error SDs calibrated by city and season</li>
+              <li>Example: Chicago winter = 7°F SD, summer = 4°F SD</li>
+              <li>Ensemble overrides SD model when 10+ members available</li>
+            </ul>
+          </div>
+
+          <div class="model-card">
+            <h3>Risk Guardrails</h3>
+            <ul>
+              <li><strong>EV threshold:</strong> Only bet when expected value > +5¢</li>
+              <li><strong>Price range:</strong> 15-85¢ (avoid extreme odds)</li>
+              <li><strong>City limits:</strong> Max 2 bets per city per day</li>
+              <li><strong>Dedup:</strong> Never bet opposite sides or duplicate tickers</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Performance Charts -->
+  <div class="charts-grid">
+    <div class="chart-card">
+      <div class="chart-title">P&L Over Time</div>
+      <div class="chart-container">
+        <canvas id="pnl-chart"></canvas>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-title">Win Rate Trend</div>
+      <div class="chart-container">
+        <canvas id="winrate-chart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" data-tab="trades" onclick="switchTab('trades')">All Trades</div>
+    <div class="tab" data-tab="runs" onclick="switchTab('runs')">Run History</div>
+    <div class="tab" data-tab="calibration" onclick="switchTab('calibration')">Calibration</div>
+  </div>
+
+  <!-- Tab: All Trades -->
+  <div class="tab-content active" id="tab-trades">
+    <table id="trades-table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>City</th>
+          <th>Ticker</th>
+          <th>Side</th>
+          <th class="right">Cost</th>
+          <th class="right">Prob</th>
+          <th>Source</th>
+          <th class="right">EV</th>
+          <th>Result</th>
+          <th class="right">P&L</th>
+        </tr>
+      </thead>
+      <tbody id="trades-body"></tbody>
+    </table>
+  </div>
+
+  <!-- Tab: Run History -->
+  <div class="tab-content" id="tab-runs">
+    <table id="runs-table">
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Mode</th>
+          <th>Target Date</th>
+          <th>Cities</th>
+          <th class="right">Placed</th>
+          <th class="right">Skipped</th>
+          <th class="right">Cost</th>
+        </tr>
+      </thead>
+      <tbody id="runs-body"></tbody>
+    </table>
+  </div>
+
+  <!-- Tab: Calibration -->
+  <div class="tab-content" id="tab-calibration">
+    <table id="calibration-table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>City</th>
+          <th>Type</th>
+          <th class="right">Forecast</th>
+          <th class="right">Observed</th>
+          <th class="right">Error</th>
+          <th>Ensemble</th>
+        </tr>
+      </thead>
+      <tbody id="calibration-body"></tbody>
+    </table>
+  </div>
 </div>
 
 <script>
-const WORKER_URL = 'https://kalshi-weather-data.wes-432.workers.dev';
 const DATA_URL = 'data.json';
-
 let tradeData = null;
-let activeDate = 'all';
+let pnlChart = null;
+let winrateChart = null;
 
-// ---- Tabs ----
-document.querySelectorAll('.tab').forEach(tab => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-    tab.classList.add('active');
-    document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
-    // Lazy-load weather on first click
-    if (tab.dataset.tab === 'weather' && !weatherLoaded) loadLiveWeather();
-  });
-});
+// Toggle model explanation
+function toggleModel() {
+  const content = document.getElementById('model-content');
+  const icon = document.getElementById('expand-icon');
+  content.classList.toggle('expanded');
+  icon.textContent = content.classList.contains('expanded') ? '▲' : '▼';
+}
 
-let weatherLoaded = false;
+// Switch tabs
+function switchTab(tabName) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+  document.getElementById(`tab-${tabName}`).classList.add('active');
+}
 
-// ---- Fetch trade data ----
-async function loadTradeData() {
+// Load data
+async function loadData() {
   try {
     const resp = await fetch(DATA_URL + '?t=' + Date.now());
     tradeData = await resp.json();
-    renderPnL(tradeData.pnl);
-    renderDateFilters(tradeData.by_date);
+
+    renderHeroCards(tradeData);
+    renderCharts(tradeData);
     renderTrades(tradeData.trades);
     renderRuns(tradeData.runs);
     renderCalibration(tradeData.trades);
-    document.getElementById('updated').innerHTML =
-      'Data exported: ' + formatTime(tradeData.exported_at) +
-      ' &mdash; <span class="live">Auto-updates after each run</span>';
+
+    document.getElementById('status-text').textContent = 'Live · Updated ' + formatTime(tradeData.exported_at);
   } catch (e) {
-    document.getElementById('updated').textContent = 'Failed to load trade data: ' + e.message;
+    document.getElementById('status-text').textContent = 'Error loading data';
+    console.error('Failed to load data:', e);
   }
 }
 
-// ---- P&L Cards ----
-function renderPnL(pnl) {
+// Hero cards
+function renderHeroCards(data) {
+  const pnl = data.pnl;
   const net = pnl.net_pnl_dollars || 0;
-  const netClass = net >= 0 ? 'green' : 'red';
-  const netSign = net >= 0 ? '+' : '';
-  const wr = pnl.win_rate !== null ? (pnl.win_rate * 100).toFixed(0) + '%' : 'N/A';
-  document.getElementById('pnl-cards').innerHTML = `
-    <div class="card">
-      <div class="card-label">Total Invested</div>
-      <div class="card-value">$${(pnl.total_cost_dollars || 0).toFixed(2)}</div>
-      <div class="card-detail">${pnl.filled_trades || 0} filled trades</div>
-    </div>
-    <div class="card">
-      <div class="card-label">Net P&L</div>
-      <div class="card-value ${netClass}">${netSign}$${net.toFixed(2)}</div>
-      <div class="card-detail">Payout: $${(pnl.total_payout_dollars || 0).toFixed(2)}</div>
-    </div>
-    <div class="card">
-      <div class="card-label">Win Rate</div>
-      <div class="card-value">${wr}</div>
-      <div class="card-detail">${pnl.wins || 0}W - ${pnl.losses || 0}L - ${pnl.pending || 0} pending</div>
-    </div>
-    <div class="card">
-      <div class="card-label">Total Trades</div>
-      <div class="card-value">${pnl.total_trades || 0}</div>
-      <div class="card-detail">${pnl.filled_trades || 0} filled, ${(pnl.total_trades || 0) - (pnl.filled_trades || 0)} unfilled</div>
-    </div>
-  `;
+  const invested = pnl.total_cost_dollars || 0;
+  const wins = pnl.wins || 0;
+  const losses = pnl.losses || 0;
+  const pending = pnl.pending || 0;
+  const winRate = pnl.win_rate;
+  const roi = invested > 0 ? (net / invested) * 100 : 0;
+
+  // P&L
+  const pnlClass = net >= 0 ? 'green' : 'red';
+  const pnlSign = net >= 0 ? '+' : '';
+  document.getElementById('pnl-value').textContent = pnlSign + '$' + net.toFixed(2);
+  document.getElementById('pnl-value').className = 'hero-card-value ' + pnlClass;
+  document.getElementById('pnl-detail').textContent = invested > 0 ? `$${invested.toFixed(2)} invested` : 'No trades yet';
+
+  // Win Rate
+  const wrDisplay = winRate !== null ? (winRate * 100).toFixed(0) + '%' : '—';
+  document.getElementById('winrate-value').textContent = wrDisplay;
+  document.getElementById('winrate-detail').textContent = `${wins}W - ${losses}L - ${pending} pending`;
+
+  // Active
+  document.getElementById('active-value').textContent = pending;
+
+  // ROI
+  const roiDisplay = invested > 0 ? (roi >= 0 ? '+' : '') + roi.toFixed(1) + '%' : '—';
+  const roiClass = roi >= 0 ? 'green' : 'red';
+  document.getElementById('roi-value').textContent = roiDisplay;
+  document.getElementById('roi-value').className = 'hero-card-value ' + roiClass;
+  document.getElementById('roi-detail').textContent = invested > 0 ? `$${invested.toFixed(2)} invested` : '$0 invested';
 }
 
-// ---- Date Filters ----
-function renderDateFilters(byDate) {
-  const dates = Object.keys(byDate).sort().reverse();
-  let html = '<div class="filter-btn active" data-date="all">All Dates</div>';
-  for (const d of dates) {
-    const info = byDate[d];
-    html += `<div class="filter-btn" data-date="${d}">${d} (${info.trade_count})</div>`;
+// Charts
+function renderCharts(data) {
+  renderPnLChart(data);
+  renderWinRateChart(data);
+}
+
+function renderPnLChart(data) {
+  const ctx = document.getElementById('pnl-chart');
+
+  if (data.trades.length === 0) {
+    ctx.style.display = 'none';
+    ctx.parentElement.innerHTML = '<div class="chart-empty"><div class="chart-empty-icon">📊</div><div class="chart-empty-text">No P&L data yet<br>First bets tonight at 8 PM CT</div></div>';
+    return;
   }
-  const el = document.getElementById('date-filters');
-  el.innerHTML = html;
-  el.querySelectorAll('.filter-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      el.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      activeDate = btn.dataset.date;
-      renderTrades(tradeData.trades);
-    });
+
+  // Group by date, calculate cumulative P&L
+  const byDate = {};
+  for (const t of data.trades) {
+    if (t.dry_run || !t.filled) continue;
+    const d = t.target_date;
+    if (!byDate[d]) byDate[d] = { pnl: 0 };
+    if (t.settlement_result === 'win') {
+      byDate[d].pnl += (t.payout_cents - t.cost_cents) / 100;
+    } else if (t.settlement_result === 'loss') {
+      byDate[d].pnl -= t.cost_cents / 100;
+    }
+  }
+
+  const dates = Object.keys(byDate).sort();
+  let cumulative = 0;
+  const cumulativeData = dates.map(d => {
+    cumulative += byDate[d].pnl;
+    return cumulative;
+  });
+
+  if (pnlChart) pnlChart.destroy();
+  pnlChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: dates,
+      datasets: [{
+        label: 'Cumulative P&L',
+        data: cumulativeData,
+        borderColor: cumulativeData[cumulativeData.length - 1] >= 0 ? '#3fb950' : '#f85149',
+        backgroundColor: cumulativeData[cumulativeData.length - 1] >= 0 ? 'rgba(63, 185, 80, 0.1)' : 'rgba(248, 81, 73, 0.1)',
+        borderWidth: 2,
+        tension: 0.3,
+        fill: true
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => '$' + ctx.parsed.y.toFixed(2)
+          }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: { color: '#8b949e', callback: v => '$' + v }
+        },
+        x: {
+          ticks: { color: '#8b949e' }
+        }
+      }
+    }
   });
 }
 
-// ---- Trades Table ----
-function renderTrades(trades) {
-  const filtered = activeDate === 'all' ? trades : trades.filter(t => t.target_date === activeDate);
-  const sorted = [...filtered].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+function renderWinRateChart(data) {
+  const ctx = document.getElementById('winrate-chart');
 
-  let html = '';
-  for (const t of sorted) {
-    const isDry = t.dry_run;
-    const cost = (t.cost_cents / 100).toFixed(2);
+  if (data.trades.length === 0) {
+    ctx.style.display = 'none';
+    ctx.parentElement.innerHTML = '<div class="chart-empty"><div class="chart-empty-icon">📈</div><div class="chart-empty-text">No win rate data yet<br>First settlements tomorrow at 9 AM CT</div></div>';
+    return;
+  }
 
-    // Result badge
-    let resultBadge;
-    if (isDry) {
-      resultBadge = '<span class="badge badge-dry">DRY RUN</span>';
-    } else if (!t.filled) {
-      resultBadge = '<span class="badge badge-nofill">Not Filled</span>';
-    } else if (t.settlement_result === 'win') {
-      resultBadge = '<span class="badge badge-win">WIN</span>';
-    } else if (t.settlement_result === 'loss') {
-      resultBadge = '<span class="badge badge-loss">LOSS</span>';
-    } else {
-      resultBadge = '<span class="badge badge-pending">Pending</span>';
-    }
+  // Group by date, calculate win rate
+  const byDate = {};
+  for (const t of data.trades) {
+    if (t.dry_run || !t.filled || !t.settlement_result || t.settlement_result === 'pending') continue;
+    const d = t.target_date;
+    if (!byDate[d]) byDate[d] = { wins: 0, total: 0 };
+    byDate[d].total++;
+    if (t.settlement_result === 'win') byDate[d].wins++;
+  }
 
-    // P&L
-    let pnlStr = '--';
-    if (t.filled && !isDry) {
-      if (t.settlement_result === 'win') {
-        const profit = (t.payout_cents - t.cost_cents) / 100;
-        pnlStr = '<span class="green">+$' + profit.toFixed(2) + '</span>';
-      } else if (t.settlement_result === 'loss') {
-        pnlStr = '<span class="red">-$' + cost + '</span>';
-      } else {
-        pnlStr = '<span class="yellow">?</span>';
+  const dates = Object.keys(byDate).sort();
+  const winRates = dates.map(d => (byDate[d].wins / byDate[d].total) * 100);
+
+  if (winrateChart) winrateChart.destroy();
+  winrateChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: dates,
+      datasets: [{
+        label: 'Win Rate',
+        data: winRates,
+        borderColor: '#58a6ff',
+        backgroundColor: 'rgba(88, 166, 255, 0.1)',
+        borderWidth: 2,
+        tension: 0.3,
+        fill: true
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => ctx.parsed.y.toFixed(0) + '%'
+          }
+        }
+      },
+      scales: {
+        y: {
+          min: 0,
+          max: 100,
+          ticks: { color: '#8b949e', callback: v => v + '%' }
+        },
+        x: {
+          ticks: { color: '#8b949e' }
+        }
       }
     }
+  });
+}
 
-    // Prob source badge
-    const srcBadge = t.prob_source === 'ensemble'
-      ? '<span class="badge badge-ensemble">Ensemble</span>'
-      : t.prob_source === 'sd_model'
-        ? '<span class="badge badge-sd">SD Model</span>'
-        : '<span class="badge badge-sd">--</span>';
+// Trades table
+function renderTrades(trades) {
+  if (trades.length === 0) {
+    document.getElementById('trades-body').innerHTML = '<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--text-muted)">No trades yet — first run tonight at 8 PM CT</td></tr>';
+    return;
+  }
 
-    // Forecast
-    const fHigh = t.forecast_high_f !== null ? t.forecast_high_f + 'F' : '--';
-    const fLow = t.forecast_low_f !== null ? t.forecast_low_f + 'F' : '--';
-    const forecast = 'H:' + fHigh + ' L:' + fLow;
+  const sorted = [...trades].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  let html = '';
 
-    // Observed
-    const oHigh = t.observed_high_f !== null ? Math.round(t.observed_high_f) + 'F' : '--';
-    const oLow = t.observed_low_f !== null ? Math.round(t.observed_low_f) + 'F' : '--';
-    const observed = t.observed_high_f !== null ? 'H:' + oHigh + ' L:' + oLow : '--';
+  for (const t of sorted) {
+    if (t.dry_run) continue; // Hide dry runs
 
-    // Ensemble info
-    let ensInfo = '--';
-    if (t.ensemble_member_count) {
-      const isHigh = t.ticker.includes('HIGH');
-      const mean = isHigh
-        ? (t.ensemble_mean_high !== null ? t.ensemble_mean_high + 'F' : '?')
-        : (t.ensemble_mean_low !== null ? t.ensemble_mean_low + 'F' : '?');
-      const sd = isHigh
-        ? (t.ensemble_sd_high !== null ? '\u00B1' + t.ensemble_sd_high : '')
-        : (t.ensemble_sd_low !== null ? '\u00B1' + t.ensemble_sd_low : '');
-      ensInfo = t.ensemble_member_count + 'm ' + mean + ' ' + sd;
+    const cost = (t.cost_cents / 100).toFixed(2);
+    const prob = t.est_probability !== null ? (t.est_probability * 100).toFixed(0) + '%' : '—';
+    const ev = t.expected_value_cents !== null ? '+' + t.expected_value_cents.toFixed(0) + 'c' : '—';
+
+    const srcBadge = t.prob_source === 'ensemble' ? '<span class="badge badge-ensemble">Ensemble</span>' : '<span class="badge badge-sd">SD Model</span>';
+
+    let resultBadge, pnl;
+    if (!t.filled) {
+      resultBadge = '<span class="badge" style="background:rgba(107,114,128,0.15);color:#9ca3af">Unfilled</span>';
+      pnl = '—';
+    } else if (t.settlement_result === 'win') {
+      resultBadge = '<span class="badge badge-win">WIN</span>';
+      const profit = (t.payout_cents - t.cost_cents) / 100;
+      pnl = '<span class="green">+$' + profit.toFixed(2) + '</span>';
+    } else if (t.settlement_result === 'loss') {
+      resultBadge = '<span class="badge badge-loss">LOSS</span>';
+      pnl = '<span class="red">-$' + cost + '</span>';
+    } else {
+      resultBadge = '<span class="badge badge-pending">Pending</span>';
+      pnl = '<span class="yellow">?</span>';
     }
 
-    // EV
-    const ev = t.expected_value_cents !== null ? '+' + t.expected_value_cents.toFixed(0) + 'c' : '--';
-
-    // Prob
-    const prob = t.est_probability !== null ? (t.est_probability * 100).toFixed(0) + '%' : '--';
-
-    html += '<tr>' +
-      '<td class="nowrap">' + t.target_date + '</td>' +
-      '<td><strong>' + t.city + '</strong></td>' +
-      '<td class="mono">' + t.ticker + '</td>' +
-      '<td>' + t.side.toUpperCase() + '</td>' +
-      '<td class="right nowrap">$' + cost + '<br><span style="color:var(--muted);font-size:11px">' + t.contracts + 'x @ ' + t.yes_price_cents + 'c</span></td>' +
-      '<td class="right">' + prob + '</td>' +
-      '<td>' + srcBadge + '</td>' +
-      '<td class="nowrap" style="font-size:12px">' + forecast + '</td>' +
-      '<td class="nowrap" style="font-size:12px">' + observed + '</td>' +
-      '<td style="font-size:11px;color:var(--muted)">' + ensInfo + '</td>' +
-      '<td class="right nowrap">' + ev + '</td>' +
-      '<td>' + resultBadge + '</td>' +
-      '<td class="right nowrap">' + pnlStr + '</td>' +
-    '</tr>';
+    html += `<tr>
+      <td class="nowrap">${t.target_date}</td>
+      <td><strong>${t.city}</strong></td>
+      <td class="mono">${t.ticker}</td>
+      <td>${t.side.toUpperCase()}</td>
+      <td class="right nowrap">$${cost}</td>
+      <td class="right">${prob}</td>
+      <td>${srcBadge}</td>
+      <td class="right">${ev}</td>
+      <td>${resultBadge}</td>
+      <td class="right nowrap">${pnl}</td>
+    </tr>`;
   }
 
-  document.getElementById('trades-body').innerHTML = html || '<tr><td colspan="13" style="text-align:center;color:var(--muted)">No trades found</td></tr>';
+  document.getElementById('trades-body').innerHTML = html || '<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--text-muted)">No live trades yet</td></tr>';
 }
 
-// ---- Run History ----
+// Runs table
 function renderRuns(runs) {
+  if (runs.length === 0) {
+    document.getElementById('runs-body').innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--text-muted)">No runs yet</td></tr>';
+    return;
+  }
+
   let html = '';
   for (const r of runs) {
-    html += '<tr>' +
-      '<td class="nowrap">' + formatTime(r.timestamp) + '</td>' +
-      '<td>' + r.mode + '</td>' +
-      '<td>' + r.target_date + '</td>' +
-      '<td>' + r.cities + '</td>' +
-      '<td class="right">' + r.trades_placed + '</td>' +
-      '<td class="right">' + r.trades_skipped + '</td>' +
-      '<td class="right">$' + (r.total_cost_cents / 100).toFixed(2) + '</td>' +
-    '</tr>';
+    html += `<tr>
+      <td class="nowrap">${formatTime(r.timestamp)}</td>
+      <td>${r.mode}</td>
+      <td>${r.target_date}</td>
+      <td>${r.cities}</td>
+      <td class="right">${r.trades_placed}</td>
+      <td class="right">${r.trades_skipped}</td>
+      <td class="right">$${(r.total_cost_cents / 100).toFixed(2)}</td>
+    </tr>`;
   }
-  document.getElementById('runs-body').innerHTML = html || '<tr><td colspan="7" style="text-align:center;color:var(--muted)">No runs yet</td></tr>';
+
+  document.getElementById('runs-body').innerHTML = html;
 }
 
-// ---- Calibration ----
+// Calibration table
 function renderCalibration(trades) {
-  const settled = trades.filter(t =>
-    t.filled && !t.dry_run && t.observed_high_f !== null &&
-    (t.settlement_result === 'win' || t.settlement_result === 'loss')
-  );
+  const settled = trades.filter(t => t.filled && !t.dry_run && t.observed_high_f !== null && (t.settlement_result === 'win' || t.settlement_result === 'loss'));
+
+  if (settled.length === 0) {
+    document.getElementById('calibration-body').innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--text-muted)">No settled trades with observed temps yet</td></tr>';
+    return;
+  }
 
   const seen = new Set();
   let html = '';
+
   for (const t of settled) {
     const key = t.target_date + '-' + t.city;
     if (seen.has(key)) continue;
     seen.add(key);
 
     // High
-    const fH = t.forecast_high_f !== null ? t.forecast_high_f : null;
+    const fH = t.forecast_high_f;
     const oH = t.observed_high_f !== null ? Math.round(t.observed_high_f) : null;
     const errH = (fH !== null && oH !== null) ? oH - fH : null;
     const errHClass = errH !== null ? (Math.abs(errH) > 5 ? 'red' : Math.abs(errH) > 3 ? 'yellow' : 'green') : '';
-    const ensMH = t.ensemble_mean_high !== null ? t.ensemble_mean_high + 'F' : '--';
-    const ensSH = t.ensemble_sd_high !== null ? '\u00B1' + t.ensemble_sd_high : '--';
+    const ensH = t.ensemble_mean_high !== null ? `${t.ensemble_mean_high}F ±${t.ensemble_sd_high || '?'}` : '—';
 
-    html += '<tr>' +
-      '<td>' + t.target_date + '</td><td><strong>' + t.city + '</strong></td><td>High</td>' +
-      '<td class="right">' + (fH !== null ? fH + 'F' : '--') + '</td>' +
-      '<td class="right">' + (oH !== null ? oH + 'F' : '--') + '</td>' +
-      '<td class="right ' + errHClass + '">' + (errH !== null ? errH + 'F' : '--') + '</td>' +
-      '<td>' + ensMH + '</td><td>' + ensSH + '</td>' +
-    '</tr>';
+    html += `<tr>
+      <td>${t.target_date}</td>
+      <td><strong>${t.city}</strong></td>
+      <td>High</td>
+      <td class="right">${fH !== null ? fH + 'F' : '—'}</td>
+      <td class="right">${oH !== null ? oH + 'F' : '—'}</td>
+      <td class="right ${errHClass}">${errH !== null ? errH + 'F' : '—'}</td>
+      <td>${ensH}</td>
+    </tr>`;
 
     // Low
-    const fL = t.forecast_low_f !== null ? t.forecast_low_f : null;
+    const fL = t.forecast_low_f;
     const oL = t.observed_low_f !== null ? Math.round(t.observed_low_f) : null;
     const errL = (fL !== null && oL !== null) ? oL - fL : null;
     const errLClass = errL !== null ? (Math.abs(errL) > 5 ? 'red' : Math.abs(errL) > 3 ? 'yellow' : 'green') : '';
-    const ensML = t.ensemble_mean_low !== null ? t.ensemble_mean_low + 'F' : '--';
-    const ensSL = t.ensemble_sd_low !== null ? '\u00B1' + t.ensemble_sd_low : '--';
+    const ensL = t.ensemble_mean_low !== null ? `${t.ensemble_mean_low}F ±${t.ensemble_sd_low || '?'}` : '—';
 
-    html += '<tr>' +
-      '<td>' + t.target_date + '</td><td><strong>' + t.city + '</strong></td><td>Low</td>' +
-      '<td class="right">' + (fL !== null ? fL + 'F' : '--') + '</td>' +
-      '<td class="right">' + (oL !== null ? oL + 'F' : '--') + '</td>' +
-      '<td class="right ' + errLClass + '">' + (errL !== null ? errL + 'F' : '--') + '</td>' +
-      '<td>' + ensML + '</td><td>' + ensSL + '</td>' +
-    '</tr>';
+    html += `<tr>
+      <td>${t.target_date}</td>
+      <td><strong>${t.city}</strong></td>
+      <td>Low</td>
+      <td class="right">${fL !== null ? fL + 'F' : '—'}</td>
+      <td class="right">${oL !== null ? oL + 'F' : '—'}</td>
+      <td class="right ${errLClass}">${errL !== null ? errL + 'F' : '—'}</td>
+      <td>${ensL}</td>
+    </tr>`;
   }
 
-  document.getElementById('calibration-body').innerHTML = html || '<tr><td colspan="8" style="text-align:center;color:var(--muted)">No settled trades with observed data yet</td></tr>';
+  document.getElementById('calibration-body').innerHTML = html;
 }
 
-// ---- Live Weather ----
-async function loadLiveWeather() {
-  weatherLoaded = true;
-  try {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const dateStr = tomorrow.toISOString().split('T')[0];
-    const resp = await fetch(WORKER_URL + '/bundle?date=' + dateStr);
-    const data = await resp.json();
-
-    document.getElementById('weather-loading').style.display = 'none';
-    const grid = document.getElementById('weather-grid');
-    let html = '';
-
-    for (const [code, city] of Object.entries(data.cities || {})) {
-      const w = city.weather || {};
-      const ens = w.ensemble || {};
-      const current = w.current_temp_f !== null && w.current_temp_f !== undefined ? w.current_temp_f + 'F' : '--';
-      const fHigh = w.predicted_high_f !== null && w.predicted_high_f !== undefined ? w.predicted_high_f + 'F' : '--';
-      const fLow = w.predicted_low_f !== null && w.predicted_low_f !== undefined ? w.predicted_low_f + 'F' : '--';
-
-      let ensHtml = '';
-      if (ens.member_count && ens.member_count >= 10) {
-        const highM = ens.high_members || [];
-        const lowM = ens.low_members || [];
-        const meanH = highM.length ? (highM.reduce(function(a,b){return a+b;}, 0) / highM.length).toFixed(1) : '?';
-        const meanL = lowM.length ? (lowM.reduce(function(a,b){return a+b;}, 0) / lowM.length).toFixed(1) : '?';
-        const sdH = highM.length ? Math.sqrt(highM.reduce(function(s,v){return s + Math.pow(v - meanH, 2);}, 0) / highM.length).toFixed(1) : '?';
-        const sdL = lowM.length ? Math.sqrt(lowM.reduce(function(s,v){return s + Math.pow(v - meanL, 2);}, 0) / lowM.length).toFixed(1) : '?';
-        ensHtml =
-          '<div class="weather-row" style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px">' +
-            '<span style="color:var(--purple);font-weight:600">Ensemble (' + ens.member_count + 'm)</span>' +
-          '</div>' +
-          '<div class="weather-row"><span>High</span><span>' + meanH + 'F \u00B1' + sdH + '</span></div>' +
-          '<div class="weather-row"><span>Low</span><span>' + meanL + 'F \u00B1' + sdL + '</span></div>';
-      }
-
-      const highContracts = (city.markets && city.markets.high && city.markets.high.contracts || []).length;
-      const lowContracts = (city.markets && city.markets.low && city.markets.low.contracts || []).length;
-
-      html +=
-        '<div class="weather-card">' +
-          '<div class="weather-city">' + code + ' - ' + (city.city_name || '') + '</div>' +
-          '<div class="weather-temp">' + current + '</div>' +
-          '<div style="font-size:11px;color:var(--muted)">Current observation</div>' +
-          '<div class="weather-row"><span>Fcst High</span><span>' + fHigh + '</span></div>' +
-          '<div class="weather-row"><span>Fcst Low</span><span>' + fLow + '</span></div>' +
-          '<div class="weather-row"><span>Markets</span><span>' + (highContracts + lowContracts) + ' contracts</span></div>' +
-          ensHtml +
-        '</div>';
-    }
-    grid.innerHTML = html;
-  } catch (e) {
-    document.getElementById('weather-loading').innerHTML = 'Failed to load weather: ' + e.message;
-  }
-}
-
-// ---- Helpers ----
+// Format time
 function formatTime(iso) {
-  if (!iso) return '--';
+  if (!iso) return '—';
   try {
     const d = new Date(iso);
     if (isNaN(d.getTime())) return iso;
-    return d.toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) + ' CT';
-  } catch (ex) { return iso; }
+    return d.toLocaleString('en-US', {
+      timeZone: 'America/Chicago',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    }) + ' CT';
+  } catch (e) {
+    return iso;
+  }
 }
 
-// ---- Init ----
-loadTradeData();
+// Init
+loadData();
 </script>
+
 </body>
 </html>
