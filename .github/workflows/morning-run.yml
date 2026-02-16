@@ -58,7 +58,7 @@ jobs:
         run: |
           git config user.name "kalshi-bot"
           git config user.email "bot@kalshi-agent.local"
-          git pull --rebase origin main || true
           git add trades.db dashboard/data.json
           git diff --cached --quiet || git commit -m "bot: trades.db + dashboard after morning run $(date -u +%Y-%m-%d)"
+          git pull --rebase origin main || true
           git push
